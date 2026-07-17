@@ -4,6 +4,8 @@
 import { isHoliday } from './holidays';
 import { parseDate } from './format';
 import { reportDeadlineStatus, deadlineAdherence } from './deadlines';
+import { computeCoursePaces, courseEtaDays } from './coursePace';
+import type { CoursePassedHistory } from './history';
 import type { CourseMaterial } from './courseApi';
 import type { ReportProgress } from './api';
 
@@ -283,6 +285,37 @@ export function workTimeTendency(
   for (const r of rows.slice(0, 8)) insights.push({ kind: 'note', text: `${r.title}: ${r.parts.join(' / ')}` });
   insights.push({ kind: 'note', text: '※直前の完了からの間隔（0.5〜45分のみ採用・確定完了時のみ）による近似。サンプルが増えるほど教科別シェアの時間換算に反映されます。' });
   return { title: '所要時間の実測', insights };
+}
+
+/** 教科別ペースと完了見込み（教科別 passed 履歴の蓄積から）。数日ぶん貯まると表示。 */
+export function coursePaceTendency(history: CoursePassedHistory, courses: CourseMaterial[]): Section {
+  const titleById = new Map(courses.map((c) => [c.id, c.title]));
+  const remById = new Map(courses.map((c) => [c.id, Math.max(0, c.total - c.passed)]));
+  const paces = computeCoursePaces(history, 28 * 86400000);
+  const rows = [...paces.values()]
+    .filter((p) => p.samples >= 2 && (remById.get(p.id) ?? 0) > 0)
+    .map((p) => ({
+      id: p.id,
+      title: titleById.get(p.id) ?? `コース${p.id}`,
+      perWeek: p.perWeek,
+      eta: courseEtaDays(remById.get(p.id) ?? 0, p.perDay),
+    }))
+    .sort((a, b) => (a.eta === null ? 1 : b.eta === null ? -1 : b.eta - a.eta)); // 遠い（危ない）順
+  if (!rows.length) {
+    return {
+      title: '教科別ペース',
+      insights: [{ kind: 'note', text: '教科ごとの消化ペースを日々記録中。数日ぶん貯まると、教科別のペースと完了見込みを表示します。' }],
+    };
+  }
+  const insights: Insight[] = rows.slice(0, 8).map((r) => ({
+    kind: r.eta === null ? 'warn' : 'note',
+    text:
+      r.eta === null
+        ? `${r.title}: 直近は進んでいません（このままだと完了時期は未定）。`
+        : `${r.title}: 約 ${r1(r.perWeek)}/週 → このペースで完了まで 約${r.eta}日。`,
+  }));
+  insights.push({ kind: 'note', text: '※教科ごとの passed 差分から算出。締切と突き合わせた「間に合わない教科」の警告は今後追加予定。' });
+  return { title: '教科別ペース', insights };
 }
 
 /** レポート締切の状況: 締切遵守率（過去）＋締切超過＋次の締切。月次締切ベースの分析。 */

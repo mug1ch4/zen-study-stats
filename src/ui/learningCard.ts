@@ -5,12 +5,12 @@ import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
-import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements, getWorkTimes, getIncludeSupp, setIncludeSupp } from '../history';
+import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements, getWorkTimes, getIncludeSupp, setIncludeSupp, getCoursePassedHistory } from '../history';
 import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
 import { evaluateCalibration } from '../calibration';
 import { reportDeadlineStatus, type DeadlineStatus } from '../deadlines';
 import { zenMondayISO } from '../format';
-import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, deadlineTendency, type Section } from '../analysis';
+import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, deadlineTendency, coursePaceTendency, type Section } from '../analysis';
 import { buildPlanIcs, downloadText } from '../ics';
 import { getNearDoneChapters } from '../courseApi';
 import { motivationNudges, type Nudge } from '../motivation';
@@ -518,7 +518,7 @@ async function renderAnalysisTab(
   pane.appendChild(h('div', { class: 'zss-empty' }, ['分析中…']));
   try {
     const series = await getSeriesOnce();
-    const [courses, report, hour, workTimes] = await Promise.all([getCourses(), fetchReportProgresses(), getHourStats(), getWorkTimes()]);
+    const [courses, report, hour, workTimes, coursePassedHist] = await Promise.all([getCourses(), fetchReportProgresses(), getHourStats(), getWorkTimes(), getCoursePassedHistory()]);
     // 14日窓シードとマージ（新規でも分析可）
     const dayMap = new Map<string, number>();
     for (const p of series) dayMap.set(p.date, p.amount);
@@ -549,6 +549,7 @@ async function renderAnalysisTab(
       distributionSummary(merged),
       weekdayTendency(merged),
       timeOfDayTendency(hour),
+      coursePaceTendency(coursePassedHist, courses),
       workTimeTendency(workTimes, courses),
       monthlyTendency(merged),
       holidayTendency(merged),

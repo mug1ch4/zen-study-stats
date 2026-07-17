@@ -120,6 +120,39 @@ export async function snapshotMaterials(passed: number, total: number): Promise<
   }
 }
 
+// 教科ごとの passed 履歴（教科別ペース＝将来の「教科別ETA・締切リスク」の土台）。
+// { "YYYY-MM-DD": { [courseId]: passed } }。日次スナップで1日1点。
+const KEY_COURSEHIST = 'zss:coursePassedHist';
+export type CoursePassedHistory = { date: string; byCourse: Record<number, number> }[];
+
+export async function snapshotCoursePassed(courses: { id: number; passed: number }[]): Promise<void> {
+  if (memOverride || !courses.length) return;
+  try {
+    const r = await chrome.storage.local.get([KEY_COURSEHIST]);
+    const h = (r?.[KEY_COURSEHIST] as Record<string, Record<number, number>>) ?? {};
+    const day: Record<number, number> = {};
+    for (const c of courses) day[c.id] = c.passed;
+    h[todayISO()] = day;
+    // 剪定: 直近120日分だけ保持
+    const keys = Object.keys(h).sort();
+    while (keys.length > 120) delete h[keys.shift()!];
+    await chrome.storage.local.set({ [KEY_COURSEHIST]: h });
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function getCoursePassedHistory(): Promise<CoursePassedHistory> {
+  if (memOverride) return [];
+  try {
+    const r = await chrome.storage.local.get([KEY_COURSEHIST]);
+    const h = (r?.[KEY_COURSEHIST] as Record<string, Record<number, number>>) ?? {};
+    return Object.keys(h).sort().map((date) => ({ date, byCourse: h[date] }));
+  } catch {
+    return [];
+  }
+}
+
 // 当日始点の passed_materials（デイリー目標の「今日の完了数」を確実に差分算出するため）。
 const KEY_DAYSTART = 'zss:dayStart'; // { date:"YYYY-MM-DD", passed:number }
 export async function getDayStart(): Promise<{ date: string; passed: number } | null> {

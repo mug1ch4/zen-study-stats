@@ -1,10 +1,10 @@
 // コンテンツスクリプトのエントリ。
 // 【第一原則】GETのみ・read-only。DOMは自ブラウザの描画変更のみ。学習記録は一切変更しない。
 import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } from './api';
-import { fetchMaterialTotals, fetchSectionQuestions } from './courseApi';
+import { fetchMaterialTotals, fetchCourseMaterials, fetchSectionQuestions } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, initDarkModeFrame, preInitDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
-import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, getSeries, recordWorkTime } from './history';
+import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, snapshotCoursePassed, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, getSeries, recordWorkTime } from './history';
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureMyCourseUndone } from './myCourseInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
@@ -236,8 +236,10 @@ function startup(): void {
       /* レポート取得失敗は学習数蓄積を妨げない */
     }
     try {
-      const mt = await fetchMaterialTotals(); // 教材消化（コツコツ視聴を反映する主指標）
+      const courses = await fetchCourseMaterials(); // 教科ごと（総/完了）。合算＝教材消化の主指標
+      const mt = { passed: courses.reduce((a, c) => a + c.passed, 0), total: courses.reduce((a, c) => a + c.total, 0) };
       await snapshotMaterials(mt.passed, mt.total);
+      await snapshotCoursePassed(courses); // 教科別 passed 履歴（教科別ペースの土台）
       // おかえりトースト（Endowed Progress）: 前回の既知値から進んでいたら honest に伝える
       // （別端末や前日の続きで積んだ分）。基準も最新化＝完了検知の初回差分を正確に保つ。
       const prevKnown = await getLastPassed();
