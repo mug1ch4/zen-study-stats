@@ -124,7 +124,7 @@ let compDebounce = 0;
 // 検知直後は増分0のことがある（動画passed直後など）。増分0なら数秒あけて数回リトライする。
 async function settleCompletion(attempt: number): Promise<void> {
   try {
-    const mt = await fetchMaterialTotals(); // 実際の passed/total
+    const mt = await fetchMaterialTotals({ fresh: true }); // 実際の passed/total（キャッシュ不可・最新必須）
     const prev = await getLastPassed();
     if (prev === null) {
       await setLastPassed(mt.passed); // 初回は基準値のみ（過去分を誤カウントしない）

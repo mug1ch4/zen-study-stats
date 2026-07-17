@@ -279,6 +279,7 @@ async function renderPredictTab(
   tip: Tooltip,
   data: LearningAmounts
 ): Promise<void> {
+  pane.textContent = ''; // 完了検知の再描画時、旧内容の下に「計算中」が積まれるのを防ぐ
   pane.appendChild(h('div', { class: 'zss-empty' }, ['予測を計算中…']));
   try {
     const series = await getSeriesOnce();
@@ -361,8 +362,7 @@ async function renderPredictTab(
 
     // 通知（節目・デイリー達成）。永続dedupで繰り返さない。
     void notifyProgress(passed, total);
-    const questTarget = pred.remaining > 0 && pred.daysLeft > 0 ? Math.max(1, Math.ceil(pred.remaining / pred.daysLeft)) : pred.remaining;
-    void notifyQuest(todayDone, questTarget);
+    void notifyQuest(todayDone, questTargetOf(pred));
   } catch (e) {
     console.warn('[ZSS] 完了予測の取得失敗:', e);
     pane.textContent = '';
@@ -373,6 +373,7 @@ async function renderPredictTab(
 /** 教科タブ: 残教材の一覧（ティアA・即時）＋ ボタンで 動画時間/テスト/レポートの残/総（ティアB・重い）。 */
 async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<CourseMaterial[]>, tip: Tooltip): Promise<void> {
   void tip;
+  pane.textContent = ''; // 完了検知の再描画時の二重表示防止
   pane.appendChild(h('div', { class: 'zss-empty' }, ['読み込み中…']));
   try {
     const courses = await getCourses();
@@ -534,11 +535,16 @@ function progressBar(pct: number): HTMLElement {
   return outer;
 }
 
+/** 締切に間に合う最低ペース（教材/日・表示用整数）。quest・教材数プランナーで共通の単一情報源。 */
+function questTargetOf(pred: Prediction): number {
+  if (pred.remaining <= 0) return 0;
+  return isFinite(pred.requiredPerDay) ? Math.max(1, Math.ceil(pred.requiredPerDay)) : pred.remaining;
+}
+
 /** 今日のデイリークエスト: 締切から逆算した推奨ペースを「今日あとN教材」に落とす。 */
 function renderDailyQuest(pred: Prediction, todayAmount: number): HTMLElement | null {
   if (pred.remaining <= 0) return null; // 消化済みは verdict 側で祝う
-  // 推奨ペース = 締切までに終える必要量 / 日（残 / 残り日数）。最低1。
-  const target = pred.daysLeft > 0 ? Math.max(1, Math.ceil(pred.remaining / pred.daysLeft)) : pred.remaining;
+  const target = questTargetOf(pred);
   const done = Math.max(0, todayAmount);
   const left = Math.max(0, target - done);
   const pct = Math.min(100, Math.round((done / target) * 100));
@@ -732,9 +738,9 @@ function renderPredictorSection(
   ]);
 
   // 一日の教材数から逆算（義務ペース以上のみ設定可能）。入力した1日ペースでの完了見込み日を出す。
+  // 義務ペースは quest（今日の目標）と同じ questTargetOf を使用（単一情報源・端数差を排除）。
   const DAY = 86400000;
-  const daysToDeadline = Math.max(1, Math.ceil((pred.finalDeadline.getTime() - today0.getTime()) / DAY));
-  const requiredPerDay = pred.remaining > 0 ? Math.max(1, Math.ceil(pred.remaining / daysToDeadline)) : 0;
+  const requiredPerDay = questTargetOf(pred);
   const paceInput = h('input', { type: 'number', class: 'zss-target-pace', min: requiredPerDay, step: 1, inputmode: 'numeric' }) as HTMLInputElement;
   paceInput.value = String(Math.max(requiredPerDay, 1));
   const paceOut = h('div', { class: 'zss-rec' }, []);

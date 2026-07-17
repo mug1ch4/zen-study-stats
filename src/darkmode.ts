@@ -34,7 +34,8 @@ function parseRGB(s: string): { r: number; g: number; b: number; a: number } | n
   if (!m) return null;
   return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] };
 }
-const isBrand = (r: number, _g: number, b: number) => b > r + 40 && b > 100; // ブランド青は残す
+/** 彩度（最大-最小チャンネル差）。色付き文字（ブランド青/成功緑/警告赤 等）の判定に使う。 */
+const chromaOf = (r: number, g: number, b: number) => Math.max(r, g, b) - Math.min(r, g, b);
 
 // ---- スタイル ----
 function styleEl(): HTMLStyleElement {
@@ -81,50 +82,86 @@ html.${HTML_CLASS} .${C.dim} { filter: brightness(0.85) contrast(0.93) saturate(
 }
 
 // ---- タグ付けパス（要素の computed style を見て分類） ----
-function tagElement(el: Element): void {
-  if (el.id === HOST_ID || el.id === TOGGLE_ID) return;
-  if ((el as HTMLElement).closest?.(`#${HOST_ID},#${TOGGLE_ID}`)) return;
+// 性能設計:
+//  (1) 読み書き二相: 全要素の computed style / layout を先に読み切り、classList 書き込みは
+//      最後にまとめる。読み(→スタイル解決)と書き(→無効化)の交互実行によるスラッシングを防ぐ。
+//  (2) シグネチャキャッシュ: class+style 属性が前回スキャン時と同じ要素はスキップ。
+//      再スキャン(遷移時3回)や、自分の classList.add が発火させる attribute 通知がほぼ無料になる。
+let sigCache = new WeakMap<Element, string>();
+const sigOf = (el: Element): string => (el.getAttribute('class') ?? '') + '|' + (el.getAttribute('style') ?? '');
+
+/** 読みフェーズ: 付けるべきタグ class を計算（DOM への書き込みは一切しない）。 */
+function planElement(el: Element): string[] {
+  const add: string[] = [];
   const cs = getComputedStyle(el);
 
   const bg = parseRGB(cs.backgroundColor);
   if (bg && bg.a > 0) {
     const L = relLum(bg.r, bg.g, bg.b);
-    if (L > 0.85) el.classList.add(C.s1);
-    else if (L > 0.6) el.classList.add(C.s2);
+    if (L > 0.85) add.push(C.s1);
+    else if (L > 0.6) add.push(C.s2);
   }
 
+  // 文字色: 無彩色〜低彩度のみ再マップ。色付き（ブランド青・成功緑・警告赤/橙 等）は
+  // 意味を壊さないよう保持する（従来は輝度だけで判定し、濃緑→白・赤→グレーになっていた）。
   const fg = parseRGB(cs.color);
-  if (fg && !isBrand(fg.r, fg.g, fg.b)) {
+  if (fg && chromaOf(fg.r, fg.g, fg.b) < 100) {
     const L = relLum(fg.r, fg.g, fg.b);
-    if (L < 0.2) el.classList.add(C.ink);
-    else if (L < 0.45) el.classList.add(C.muted);
+    if (L < 0.2) add.push(C.ink);
+    else if (L < 0.45) add.push(C.muted);
   }
 
   // 大きな背景画像(バナー)のみ暗幕オーバーレイ対象に。小さな装飾bg-imageは触らない。
   const bi = cs.backgroundImage;
   const he = el as HTMLElement;
   if (bi && bi !== 'none' && /url\(|gradient/.test(bi)) {
-    if (he.offsetWidth >= 300 && he.offsetHeight >= 50) el.classList.add(C.ov);
+    if (he.offsetWidth >= 300 && he.offsetHeight >= 50) add.push(C.ov);
   }
 
   // 大きな画像（教材スライド等・ライト固定でダーク版が無い）は減光して眩しい白を抑える。
   // svgロゴは別ルールで反転するので除外。
   if (el.tagName === 'IMG' && he.offsetWidth >= 160 && he.offsetHeight >= 120) {
     const src = (el as HTMLImageElement).src || '';
-    if (!src.includes('.svg')) el.classList.add(C.dim);
+    if (!src.includes('.svg')) add.push(C.dim);
   }
 
   // 行サイズの要素だけ ::after のロック用ハッチ(明るい斜線)を検査（perf配慮で行に限定）。
   const h = he.offsetHeight;
   if (h >= 24 && h <= 120 && he.offsetWidth >= 140) {
     const afterImg = getComputedStyle(el, '::after').backgroundImage;
-    if (afterImg && /disabled|stripe/i.test(afterImg)) el.classList.add(C.hatch);
+    if (afterImg && /disabled|stripe/i.test(afterImg)) add.push(C.hatch);
+  }
+  return add;
+}
+
+const isOurs = (el: Element): boolean =>
+  el.id === HOST_ID || el.id === TOGGLE_ID || !!(el as HTMLElement).closest?.(`#${HOST_ID},#${TOGGLE_ID}`);
+
+function scan(root: ParentNode): void {
+  const els: Element[] = [];
+  const rootEl = root as Element;
+  if (rootEl.nodeType === 1) els.push(rootEl);
+  rootEl.querySelectorAll?.('*').forEach((e) => els.push(e));
+  // 読みフェーズ（未変更要素はシグネチャ一致でスキップ）
+  const plans: [Element, string[]][] = [];
+  for (const el of els) {
+    if (isOurs(el)) continue;
+    if (sigCache.get(el) === sigOf(el)) continue;
+    plans.push([el, planElement(el)]);
+  }
+  // 書きフェーズ（まとめて適用 → 自タグ込みのシグネチャを記録し、以後のスキャンを無料化）
+  for (const [el, add] of plans) {
+    if (add.length) el.classList.add(...add);
+    sigCache.set(el, sigOf(el));
   }
 }
 
-function scan(root: ParentNode): void {
-  tagElement(root as Element);
-  (root as Element).querySelectorAll?.('*').forEach(tagElement);
+/** 単一要素の再タグ付け（attribute 変更追従用）。 */
+function scanOne(el: Element): void {
+  if (isOurs(el)) return;
+  const add = planElement(el);
+  if (add.length) el.classList.add(...add);
+  sigCache.set(el, sigOf(el));
 }
 
 // ---- 我々のカードのテーマ同期 ----
@@ -268,10 +305,11 @@ export async function setEnabled(on: boolean, persist = true): Promise<void> {
     html.classList.remove(HTML_CLASS);
     document.getElementById(STYLE_ID)?.remove();
     stopObserver();
-    // タグclassは残っても無害だが掃除
+    // タグclassは残っても無害だが掃除。キャッシュも作り直し（再有効化時にフル再スキャン）
     for (const c of Object.values(C)) {
       document.querySelectorAll('.' + c).forEach((e) => e.classList.remove(c));
     }
+    sigCache = new WeakMap();
   }
   syncOurCard();
   window.dispatchEvent(new Event('zss:themechange')); // サイドパネル等のテーマ同期用
@@ -343,7 +381,10 @@ function flush(): void {
   addedRoots = new Set();
   attrEls = new Set();
   for (const el of roots) if (el.isConnected) scan(el);
-  for (const el of attrs) if (el.isConnected && !el.closest(`#${HOST_ID},#${TOGGLE_ID}`)) tagElement(el);
+  // attribute 変更: 自分の classList.add 由来の通知はシグネチャ一致で即スキップ（ループ防止・低コスト）
+  for (const el of attrs) {
+    if (el.isConnected && sigCache.get(el) !== sigOf(el)) scanOne(el);
+  }
 }
 function stopObserver(): void {
   observer?.disconnect();

@@ -1,8 +1,7 @@
 // ZEN Study API ラッパー。
 // 【第一原則】GET のみ。状態変更(POST/PUT/PATCH/DELETE)は絶対に呼ばない。
 // このファイルには GET 以外のメソッドを書かないこと。
-
-const API_BASE = 'https://api.nnn.ed.nico';
+import { getJSON } from './http';
 
 export interface DailyAmount {
   date: string; // "YYYY-MM-DD"
@@ -13,17 +12,6 @@ export interface LearningAmounts {
   total_amount: number; // 累計
   average_amount: number; // 直近2週平均
   daily_amount: DailyAmount[]; // 直近14日
-}
-
-/** GET専用の薄いラッパー。credentials:'include' でログインCookieを送る。 */
-async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'GET',
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-  });
-  if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
-  return (await res.json()) as T;
 }
 
 let mockLearning: LearningAmounts | null = null;

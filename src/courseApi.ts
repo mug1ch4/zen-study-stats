@@ -1,16 +1,6 @@
 // コース/章のバッチ取得（GET専用）。動画合計時間・テスト/レポート数の集計に使う。
 // 【第一原則】GETのみ・read-only。
-const API_BASE = 'https://api.nnn.ed.nico';
-
-async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'GET',
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-  });
-  if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
-  return (await res.json()) as T;
-}
+import { getJSON } from './http';
 
 export interface MyCourse {
   id: number;
@@ -67,23 +57,43 @@ export function __setMockCourseMaterials(c: CourseMaterial[]): void {
   mockCourseMaterials = c;
 }
 
+// 短時間の重複呼び出し（カード描画＋日次スナップ＋サイドパネル等）をまとめるための
+// 同時実行共有＋短TTLキャッシュ。完了検知は最新値が必要なので fresh:true でバイパスする。
+const MAT_TTL_MS = 15_000;
+let matCache: { at: number; data: CourseMaterial[] } | null = null;
+let matInflight: Promise<CourseMaterial[]> | null = null;
+
 /** 教科(コース)ごとの教材総数/完了数（章は取らない軽量版=2リクエスト）。 */
-export async function fetchCourseMaterials(): Promise<CourseMaterial[]> {
+export async function fetchCourseMaterials(opts?: { fresh?: boolean }): Promise<CourseMaterial[]> {
   if (mockCourseMaterials) return mockCourseMaterials;
-  const my = await fetchMyCourses();
-  const titleById = new Map(my.map((c) => [c.id, c.title]));
-  const batch = await fetchCoursesBatch(my.map((c) => c.id));
-  return batch.map((c) => ({
-    id: c.id,
-    title: titleById.get(c.id) ?? c.title,
-    total: c.progress?.total_materials ?? 0,
-    passed: c.progress?.passed_materials ?? 0,
-  }));
+  if (!opts?.fresh) {
+    if (matCache && Date.now() - matCache.at < MAT_TTL_MS) return matCache.data;
+    if (matInflight) return matInflight;
+  }
+  const p = (async () => {
+    const my = await fetchMyCourses();
+    const titleById = new Map(my.map((c) => [c.id, c.title]));
+    const batch = await fetchCoursesBatch(my.map((c) => c.id));
+    const data = batch.map((c) => ({
+      id: c.id,
+      title: titleById.get(c.id) ?? c.title,
+      total: c.progress?.total_materials ?? 0,
+      passed: c.progress?.passed_materials ?? 0,
+    }));
+    matCache = { at: Date.now(), data };
+    return data;
+  })();
+  matInflight = p;
+  try {
+    return await p;
+  } finally {
+    if (matInflight === p) matInflight = null;
+  }
 }
 
 /** 教材消化の総数/完了数（コース横断）。 */
-export async function fetchMaterialTotals(): Promise<{ total: number; passed: number }> {
-  const courses = await fetchCourseMaterials();
+export async function fetchMaterialTotals(opts?: { fresh?: boolean }): Promise<{ total: number; passed: number }> {
+  const courses = await fetchCourseMaterials(opts);
   return {
     total: courses.reduce((a, c) => a + c.total, 0),
     passed: courses.reduce((a, c) => a + c.passed, 0),

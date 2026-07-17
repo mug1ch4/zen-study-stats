@@ -71,6 +71,8 @@ export interface Prediction {
   finalDeadline: Date;
   daysLeft: number;
   requiredPerWeek: number;
+  /** 締切に間に合う最低ペース（教材/日・生値）。残0なら0、締切超過は Infinity。表示側で ceil する。 */
+  requiredPerDay: number;
   currentPerWeek: number | null;
   paceSource: 'recent' | 'activity' | 'average' | 'none';
   projectedFinish: Date | null;
@@ -107,6 +109,7 @@ export function computePrediction(input: PredInput): Prediction {
   const daysLeft = Math.max(0, daysBetween(today, finalDeadline));
   const weeksLeft = daysLeft / 7;
   const requiredPerWeek = weeksLeft > 0 ? remaining / weeksLeft : Infinity;
+  const requiredPerDay = remaining === 0 ? 0 : daysLeft > 0 ? remaining / daysLeft : Infinity;
 
   const months = input.months.map((m) => ({ year: m.year, month: m.month, deadline: new Date(m.deadline) }));
   const series = input.materialSeries;
@@ -243,7 +246,7 @@ export function computePrediction(input: PredInput): Prediction {
 
   return {
     total, passed, remaining, finalDeadline, daysLeft,
-    requiredPerWeek, currentPerWeek, paceSource,
+    requiredPerWeek, requiredPerDay, currentPerWeek, paceSource,
     projectedFinish, daysVsDeadline, onTrack, months, startDate,
     remainingReports: input.remainingReports, estimates, untouchedSubjects, projectionCurve,
     montecarlo, pOnTime,

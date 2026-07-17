@@ -2,7 +2,7 @@
 // n-of-1（個人の時系列）向けに、少標本でも過信しない指標を選定:
 //   トレンド= 線形回帰 + Mann-Kendall（非パラメトリック・外れ日に強い）
 //   有意性 = Kruskal-Wallis（群間差がノイズか本物か）+ 効果量 η²
-//   習慣  = ラグ1自己相関（好日の連鎖）/ バースト度 B /（ジニ・パレート）集中度
+//   習慣  = ラグ1自己相関（好日の連鎖）/ バースト度 B / パレート集中度
 // 参考: quantified-self の時系列指標（自己相関・バースト度・集中度）。
 
 export const mean = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
@@ -135,17 +135,6 @@ export function burstiness(intervals: number[]): number | null {
   const sd = stdev(intervals);
   if (mu + sd === 0) return null;
   return (sd - mu) / (sd + mu);
-}
-
-/** ジニ係数（不平等度＝日々の量の偏り）。0=均等, 1に近いほど偏り。 */
-export function gini(xs: number[]): number {
-  const s = xs.filter((v) => v >= 0).sort((a, b) => a - b);
-  const n = s.length;
-  const tot = s.reduce((a, b) => a + b, 0);
-  if (n === 0 || tot === 0) return 0;
-  let cum = 0;
-  for (let i = 0; i < n; i++) cum += (i + 1) * s[i];
-  return (2 * cum) / (n * tot) - (n + 1) / n;
 }
 
 /** 上位 topFrac（例0.2）の日が全体に占める割合（パレート集中度）。 */
