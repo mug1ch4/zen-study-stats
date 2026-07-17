@@ -7,6 +7,7 @@ import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
 import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats } from '../history';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, type Section } from '../analysis';
+import { motivationNudges, type Nudge } from '../motivation';
 import { fetchReportProgresses } from '../api';
 import { fetchCourseMaterials } from '../courseApi';
 import { calendarData, trendPoints, streakInfo, type TrendMode } from '../deriveHistory';
@@ -359,7 +360,18 @@ async function renderAnalysisTab(
       holidayTendency(merged),
       consistencyTendency(merged),
     ];
+    // モチベーション・ナッジ（行動科学の実証手法）: 状況に応じた最重要ひとこと
+    const streak = streakInfo(merged);
+    const totalMat = courses.reduce((a, c) => a + c.total, 0);
+    const passedMat = courses.reduce((a, c) => a + c.passed, 0);
+    const todayAmt = data.daily_amount[data.daily_amount.length - 1]?.amount ?? 0;
+    const nudges = motivationNudges({
+      today: zenToday(), todayAmount: todayAmt, series: merged, streak,
+      totalMaterials: totalMat, passedMaterials: passedMat, courses, hour,
+    });
+
     pane.textContent = '';
+    if (nudges.length) pane.appendChild(renderMotivation(nudges.slice(0, 2)));
     pane.appendChild(h('div', { class: 'zss-analysis-head' }, ['あなたの学習傾向']));
     pane.appendChild(h('div', { class: 'zss-analysis-sub' }, [`記録 ${merged.length}日ぶんから分析（データが増えるほど精度が上がります）`]));
     for (const sec of sections) pane.appendChild(renderInsightSection(sec));
@@ -368,6 +380,15 @@ async function renderAnalysisTab(
     pane.textContent = '';
     pane.appendChild(h('div', { class: 'zss-empty' }, ['分析データを取得できませんでした。']));
   }
+}
+
+function renderMotivation(nudges: Nudge[]): HTMLElement {
+  return h('div', { class: 'zss-motiv' }, [
+    h('div', { class: 'zss-motiv-head' }, ['🔥 今日のひとこと']),
+    ...nudges.map((n) =>
+      h('div', { class: 'zss-motiv-item' }, [h('span', { class: 'zss-motiv-ic' }, [n.icon]), h('span', {}, [n.text])])
+    ),
+  ]);
 }
 
 function renderInsightSection(sec: Section): HTMLElement {
