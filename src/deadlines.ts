@@ -10,48 +10,67 @@ export interface MonthDeadline {
   passed: number; // 完了数
 }
 
-export interface NextDeadline {
+// 本家 /my_course 準拠の「レポート締切」1件分。daysLeft: +=あとN日 / 負=N日経過。
+export interface DeadlineItem {
   deadline: Date;
   total: number;
   passed: number;
   remaining: number; // 未完の章
-  daysLeft: number; // 締切まで（当日=0）
+  daysLeft: number; // 締切まで（当日=0・負=経過）
+  overdue: boolean; // 締切を過ぎている
 }
 
 export interface DeadlineStatus {
-  next: NextDeadline | null; // 直近で「未完の章が残る」締切
-  overdue: { deadline: Date; remaining: number }[]; // 締切を過ぎたのに未完（成績に影響）
-  upcomingRemaining: number; // 今後の締切ぶんの未完章 合計
-  allClear: boolean; // 締切超過も今後の残りも無い
+  /** 本家「優先するレポート」= 締切超過(未完) ＋ 直近の未完締切 を月ごとに（締切順）。 */
+  priority: DeadlineItem[];
+  /** 本家「今後のレポート」= それ以降の未完締切（締切順）。 */
+  upcoming: DeadlineItem[];
+  next: DeadlineItem | null; // 直近で未完が残る締切（priority 内の最初の未来分）
+  overdue: DeadlineItem[]; // 締切超過で未完（成績に影響）
+  upcomingRemaining: number; // priority＋upcoming の未完章 合計
+  allClear: boolean; // 未完の締切が一切無い
 }
 
 const DAY = 86400000;
 
 export function reportDeadlineStatus(months: MonthDeadline[], nowMs: number): DeadlineStatus {
-  const parsed = months
+  const items: DeadlineItem[] = months
     .map((m) => {
       const d = new Date(m.deadline);
-      return { d, total: m.total, passed: m.passed, remaining: Math.max(0, m.total - m.passed) };
+      return {
+        deadline: d,
+        total: m.total,
+        passed: m.passed,
+        remaining: Math.max(0, m.total - m.passed),
+        daysLeft: Math.ceil((d.getTime() - nowMs) / DAY),
+        overdue: d.getTime() < nowMs,
+      };
     })
-    .filter((m) => !isNaN(m.d.getTime()));
+    .filter((m) => !isNaN(m.deadline.getTime()))
+    .sort((a, b) => a.deadline.getTime() - b.deadline.getTime());
 
-  const overdue = parsed
-    .filter((m) => m.d.getTime() < nowMs && m.remaining > 0)
-    .sort((a, b) => a.d.getTime() - b.d.getTime())
-    .map((m) => ({ deadline: m.d, remaining: m.remaining }));
+  const overdue = items.filter((m) => m.overdue && m.remaining > 0);
+  const upcomingWithWork = items.filter((m) => !m.overdue && m.remaining > 0);
+  const next = upcomingWithWork[0] ?? null;
+  // 「優先」= 超過(未完) ＋ 直近の未完締切1件。「今後」= それ以降の未完締切。
+  const priority = next ? [...overdue, next] : [...overdue];
+  const upcoming = upcomingWithWork.slice(next ? 1 : 0);
+  const upcomingRemaining = [...priority, ...upcoming].reduce((a, m) => a + m.remaining, 0);
 
-  const upcoming = parsed.filter((m) => m.d.getTime() >= nowMs).sort((a, b) => a.d.getTime() - b.d.getTime());
-  const nextWork = upcoming.find((m) => m.remaining > 0) ?? null;
-  const next: NextDeadline | null = nextWork
-    ? {
-        deadline: nextWork.d,
-        total: nextWork.total,
-        passed: nextWork.passed,
-        remaining: nextWork.remaining,
-        daysLeft: Math.max(0, Math.ceil((nextWork.d.getTime() - nowMs) / DAY)),
-      }
-    : null;
+  return { priority, upcoming, next, overdue, upcomingRemaining, allClear: overdue.length === 0 && upcomingWithWork.length === 0 };
+}
 
-  const upcomingRemaining = upcoming.reduce((a, m) => a + m.remaining, 0);
-  return { next, overdue, upcomingRemaining, allClear: overdue.length === 0 && upcomingRemaining === 0 };
+export interface DeadlineAdherence {
+  pastTotal: number; // 締切を過ぎた月の数
+  pastMet: number; // うち期限内に全章完了できた数
+  rate: number; // 遵守率（0〜1）
+}
+
+/** 過去の締切のうち、期限までに全章完了できた割合（＝締切遵守率・分析の主眼）。 */
+export function deadlineAdherence(months: MonthDeadline[], nowMs: number): DeadlineAdherence {
+  const past = months
+    .map((m) => ({ d: new Date(m.deadline), met: m.passed >= m.total && m.total > 0 }))
+    .filter((m) => !isNaN(m.d.getTime()) && m.d.getTime() < nowMs);
+  const pastMet = past.filter((m) => m.met).length;
+  return { pastTotal: past.length, pastMet, rate: past.length ? pastMet / past.length : 0 };
 }

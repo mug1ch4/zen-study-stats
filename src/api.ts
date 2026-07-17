@@ -59,6 +59,33 @@ export function __setMockReport(r: ReportProgress): void {
   mockReport = r;
 }
 
+// --- 月別レポート（締切別の章内訳・免除フラグ）。/my_course・study_plans の裏で使われるAPI ---
+export interface MonthlyReportChapter {
+  course_id: number;
+  chapter_id: number;
+  course_title: string;
+  chapter_title: string;
+  subject_category_title: string;
+  passed_count: number;
+  total_count: number;
+  exempted: boolean;
+}
+export interface MonthlyReportDetail {
+  year: number;
+  month: number;
+  total_material_count: number;
+  passed_material_count: number;
+  total_chapter_count: number;
+  passed_chapter_count: number;
+  deadline_groups: { deadline: string; chapters: MonthlyReportChapter[] }[];
+  completed_chapters: MonthlyReportChapter[];
+}
+
+/** その月の締切別・章別レポート進捗（免除フラグ付き）。 */
+export function fetchMonthlyReport(year: number, month: number): Promise<MonthlyReportDetail> {
+  return getJSON<MonthlyReportDetail>(`/v2/dashboard/report_progresses/monthly/${year}/${month}`);
+}
+
 /** レポート進捗（月別の締切・総数・完了数、年度末締切）。 */
 export async function fetchReportProgresses(): Promise<ReportProgress> {
   if (mockReport) return mockReport;

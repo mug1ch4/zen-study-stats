@@ -6,6 +6,7 @@ import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, initDarkModeFrame, preInitDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
 import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, getSeries, recordWorkTime } from './history';
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
+import { ensureMyCourseUndone } from './myCourseInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
 import { notifyRolloverSoon, notifyProgress, notifyWeekReview } from './notify';
 import { zenMondayISO, parseDate, weekdayLabel } from './format';
@@ -100,6 +101,7 @@ function observeDom(): void {
       window.clearTimeout(sumDebounce);
       sumDebounce = window.setTimeout(() => {
         void ensureCourseSummary();
+        ensureMyCourseUndone(); // /my_course の各月に未完科目を注入（自ページ以外は即抜け）
         refreshNavToggle();
       }, 120);
     }
@@ -210,6 +212,7 @@ function onRouteChange(): void {
   rescanSoon(); // ダーク有効時、新ページを再スキャン（取りこぼし防止）
   ensureToggleMounted(); // ナビ再描画でトグルが消えても再設置
   void ensureCourseSummary(); // コース/チャプターの残りサマリ
+  ensureMyCourseUndone(); // /my_course の未完科目注入
   void maybeRecordVisit(); // 学習中の時間帯サンプリング（20分間隔）
   void notifyRolloverSoon(); // 5:00の日付更新間近を通知（窓外なら即抜け）
 }

@@ -3,8 +3,11 @@
 // すべて自前蓄積＋GET取得済みデータのみを使用（read-only・第一原則）。
 import { isHoliday } from './holidays';
 import { parseDate } from './format';
+import { reportDeadlineStatus, deadlineAdherence } from './deadlines';
 import type { CourseMaterial } from './courseApi';
 import type { ReportProgress } from './api';
+
+const mdOf = (d: Date): string => `${d.getMonth() + 1}/${d.getDate()}`;
 import { mean as smean, median, quantile, linreg, mannKendall, kruskalWallis, lag1Autocorr, burstiness, paretoShare } from './stats';
 
 const fmtP = (p: number): string => (p < 0.001 ? 'p<0.001' : p < 0.01 ? 'p<0.01' : `p=${p.toFixed(2)}`);
@@ -280,6 +283,40 @@ export function workTimeTendency(
   for (const r of rows.slice(0, 8)) insights.push({ kind: 'note', text: `${r.title}: ${r.parts.join(' / ')}` });
   insights.push({ kind: 'note', text: '※直前の完了からの間隔（0.5〜45分のみ採用・確定完了時のみ）による近似。サンプルが増えるほど教科別シェアの時間換算に反映されます。' });
   return { title: '所要時間の実測', insights };
+}
+
+/** レポート締切の状況: 締切遵守率（過去）＋締切超過＋次の締切。月次締切ベースの分析。 */
+export function deadlineTendency(report: ReportProgress): Section {
+  const months = report.months.map((m) => ({ year: m.year, month: m.month, deadline: m.deadline, total: m.total, passed: m.passed }));
+  const st = reportDeadlineStatus(months, Date.now());
+  const adh = deadlineAdherence(months, Date.now());
+  const insights: Insight[] = [];
+
+  // 遵守率（分析の主眼）: 過去の締切をどれだけ期限内に守れたか
+  if (adh.pastTotal >= 2) {
+    const p = Math.round(adh.rate * 100);
+    insights.push({
+      kind: p >= 90 ? 'good' : p >= 60 ? 'note' : 'warn',
+      text: `締切遵守率 ${p}%（過去${adh.pastTotal}回の締切のうち期限内に完了 ${adh.pastMet}回）。${p >= 90 ? '安定して守れています。' : p < 60 ? '締切に間に合わない月が目立ちます。前倒しを。' : ''}`,
+    });
+  }
+  // 締切超過（成績に影響）
+  if (st.overdue.length) {
+    const totalOver = st.overdue.reduce((a, o) => a + o.remaining, 0);
+    insights.push({ kind: 'warn', text: `未完のまま過ぎた締切が ${st.overdue.length}件（残り章 計${totalOver}）。成績に影響する場合があります。まず超過分から着手を。` });
+  }
+  // 次の締切
+  if (st.next) {
+    const n = st.next;
+    insights.push({
+      kind: n.daysLeft <= 7 && n.remaining > 0 ? 'warn' : 'note',
+      text: `次の締切は ${mdOf(n.deadline)}（あと${n.daysLeft}日）・残り ${n.remaining}章。${n.daysLeft > 0 ? `間に合わせるには1日あたり約 ${r1(n.remaining / Math.max(1, n.daysLeft))}章ぶん。` : ''}`,
+    });
+  } else if (!st.overdue.length) {
+    insights.push({ kind: 'good', text: '直近の締切ぶんは完了済みです。' });
+  }
+  if (!insights.length) insights.push({ kind: 'note', text: '締切の記録が貯まると、締切遵守の傾向を表示します。' });
+  return { title: 'レポート締切の状況', insights };
 }
 
 /** 必修に関するアドバイス: 残りレポート・締切・最優先コース・ペース判定。 */

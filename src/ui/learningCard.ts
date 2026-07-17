@@ -10,7 +10,7 @@ import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
 import { evaluateCalibration } from '../calibration';
 import { reportDeadlineStatus, type DeadlineStatus } from '../deadlines';
 import { zenMondayISO } from '../format';
-import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, type Section } from '../analysis';
+import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, deadlineTendency, type Section } from '../analysis';
 import { buildPlanIcs, downloadText } from '../ics';
 import { getNearDoneChapters } from '../courseApi';
 import { motivationNudges, type Nudge } from '../motivation';
@@ -543,6 +543,7 @@ async function renderAnalysisTab(
 
     const sections: Section[] = [
       journeySummary(merged, passedMat0, totalMat0, streak0.longest, unlocked0.size, ACHIEVEMENTS.length),
+      deadlineTendency(report),
       requiredAdvice(courses, report, recentPerDay),
       trendTendency(merged),
       distributionSummary(merged),
