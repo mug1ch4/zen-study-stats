@@ -7,6 +7,7 @@ import { initDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavT
 import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit } from './history';
 import { ensureCourseSummary } from './summaryInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
+import { notifyRolloverSoon } from './notify';
 
 const SETTING_PATH = '/setting';
 
@@ -122,6 +123,7 @@ function onRouteChange(): void {
   ensureToggleMounted(); // ナビ再描画でトグルが消えても再設置
   void ensureCourseSummary(); // コース/チャプターの残りサマリ
   void maybeRecordVisit(); // 学習中の時間帯サンプリング（20分間隔）
+  void notifyRolloverSoon(); // 5:00の日付更新間近を通知（窓外なら即抜け）
 }
 
 function startup(): void {

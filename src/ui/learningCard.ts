@@ -8,6 +8,7 @@ import { renderWeekdayBars } from '../charts/weekdayBars';
 import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats } from '../history';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, type Section } from '../analysis';
 import { motivationNudges, type Nudge } from '../motivation';
+import { notifyProgress, notifyQuest } from '../notify';
 import { fetchReportProgresses } from '../api';
 import { fetchCourseMaterials } from '../courseApi';
 import { calendarData, trendPoints, streakInfo, type TrendMode } from '../deriveHistory';
@@ -287,6 +288,11 @@ async function renderPredictTab(
         : `※「学習数」（累計・日別）は全コースの合計です。必修の進捗は「残教材」で判定しています。`;
     pane.textContent = '';
     pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayAmount, { savedTarget, electivesNote }));
+
+    // 通知（節目・デイリー達成）。永続dedupで繰り返さない。
+    void notifyProgress(passed, total);
+    const questTarget = pred.remaining > 0 && pred.daysLeft > 0 ? Math.max(1, Math.ceil(pred.remaining / pred.daysLeft)) : pred.remaining;
+    void notifyQuest(todayAmount, questTarget);
   } catch (e) {
     console.warn('[ZSS] 完了予測の取得失敗:', e);
     pane.textContent = '';
