@@ -19,7 +19,10 @@
       if (!/^(PUT|POST)$/i.test(method || '')) return;
       var m = String(url || '').match(RE);
       if (!m) return;
-      window.postMessage({ __zss: 'completion', courseId: m[1], chapterId: m[2] }, window.location.origin);
+      // 完了PUTは教材iframe内から送られるため、トップフレームの content.js へ通知する
+      // （iframe と top は同一オリジン www.nnn.ed.nico）。top 不在時は自分へ。
+      var target = window.top || window;
+      target.postMessage({ __zss: 'completion', courseId: m[1], chapterId: m[2] }, '*');
     } catch (e) {
       /* noop */
     }
@@ -50,7 +53,7 @@
     window.addEventListener('message', function (e) {
       try {
         if (e && e.data && e.data.__zss === 'ping') {
-          window.postMessage({ __zss: 'observer-ready' }, window.location.origin);
+          (window.top || window).postMessage({ __zss: 'observer-ready' }, '*');
         }
       } catch (err) { /* noop */ }
     });

@@ -3,7 +3,7 @@
 import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } from './api';
 import { fetchMaterialTotals } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
-import { initDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
+import { initDarkMode, initDarkModeFrame, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
 import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed } from './history';
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
@@ -203,7 +203,12 @@ function startup(): void {
 }
 
 function main(): void {
-  if (window.top !== window.self) return; // トップフレームのみ
+  if (window.top !== window.self) {
+    // サブフレーム（教材の iframe = www.nnn.ed.nico/contents/… 等）: ダークモードだけ適用。
+    // カード/サイドパネル/残りサマリ/完了検知の購読は top フレームのみで行う。
+    void initDarkModeFrame();
+    return;
+  }
   // document_start: まず観測を開始し、本家カードが描かれた瞬間に隠す（初期フラッシュ防止）
   observeDom();
   if (isSettingPath()) hideOriginalNow();

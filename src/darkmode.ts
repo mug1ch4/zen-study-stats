@@ -10,7 +10,7 @@ const STORAGE_KEY = 'zss:darkMode';
 
 // タグ用クラス（ov = 大きな背景画像=プロフィールバナー。暗幕オーバーレイで文字は暗くしない。
 // hatch = ::after のロック用ハッチ(fill_disabled_stripe)を持つ行。反転して暗くする）
-const C = { s1: 'zss-s1', s2: 'zss-s2', ink: 'zss-ink', muted: 'zss-muted', ov: 'zss-ov', hatch: 'zss-hatch' };
+const C = { s1: 'zss-s1', s2: 'zss-s2', ink: 'zss-ink', muted: 'zss-muted', ov: 'zss-ov', hatch: 'zss-hatch', dim: 'zss-dim' };
 
 // 手作りダーク・トークン
 const T = {
@@ -49,6 +49,15 @@ html.${HTML_CLASS} .${C.muted} { color: ${T.MUTED} !important; }
 html.${HTML_CLASS} *:not(#${HOST_ID}):not(#${HOST_ID} *):not(#${TOGGLE_ID}):not(#${TOGGLE_ID} *) { border-color: ${T.BORDER} !important; }
 html.${HTML_CLASS} input, html.${HTML_CLASS} textarea, html.${HTML_CLASS} select { background-color: ${T.S2} !important; color: ${T.INK} !important; }
 
+/* ホバー/フォーカスで本家が明るい背景に戻し、明色テキストと低コントラストになる問題への対処。
+   よくある操作対象のホバー/フォーカス背景を暗いサーフェスに固定して可読性を確保する。 */
+html.${HTML_CLASS} a:hover, html.${HTML_CLASS} button:hover, html.${HTML_CLASS} [role="button"]:hover,
+html.${HTML_CLASS} [role="menuitem"]:hover, html.${HTML_CLASS} li:hover, html.${HTML_CLASS} tr:hover,
+html.${HTML_CLASS} [tabindex]:hover,
+html.${HTML_CLASS} a:focus-visible, html.${HTML_CLASS} button:focus-visible, html.${HTML_CLASS} [role="button"]:focus-visible {
+  background-color: ${T.S2} !important;
+}
+
 /* ヘッダ/ナビは構造セレクタで直接（React再マウントで class が消えても白化しない） */
 html.${HTML_CLASS} header, html.${HTML_CLASS} [role="banner"] { background-color: ${T.S1} !important; color: ${T.INK} !important; }
 html.${HTML_CLASS} header *, html.${HTML_CLASS} [role="banner"] * { color: ${T.INK} !important; border-color: ${T.BORDER} !important; }
@@ -63,6 +72,10 @@ html.${HTML_CLASS} .${C.ov} > * { position: relative; z-index: 1; }
 
 /* 未解放行のロック用ハッチ(::after の明るい斜線)を反転して暗く。テーマと調和させる */
 html.${HTML_CLASS} .${C.hatch}::after { filter: invert(1) hue-rotate(180deg) brightness(0.85) !important; }
+
+/* 教材スライド等の大きな画像はライト固定（ダーク版が無い）。darken せず、白を平均して
+   ダーク側へ寄せるよう控えめに減光（＝眩しい白を抑えて背景に馴染ませる）。内容は隠さない。 */
+html.${HTML_CLASS} .${C.dim} { filter: brightness(0.85) contrast(0.93) saturate(0.96) !important; }
 `;
   return st;
 }
@@ -92,6 +105,13 @@ function tagElement(el: Element): void {
   const he = el as HTMLElement;
   if (bi && bi !== 'none' && /url\(|gradient/.test(bi)) {
     if (he.offsetWidth >= 300 && he.offsetHeight >= 50) el.classList.add(C.ov);
+  }
+
+  // 大きな画像（教材スライド等・ライト固定でダーク版が無い）は減光して眩しい白を抑える。
+  // svgロゴは別ルールで反転するので除外。
+  if (el.tagName === 'IMG' && he.offsetWidth >= 160 && he.offsetHeight >= 120) {
+    const src = (el as HTMLImageElement).src || '';
+    if (!src.includes('.svg')) el.classList.add(C.dim);
   }
 
   // 行サイズの要素だけ ::after のロック用ハッチ(明るい斜線)を検査（perf配慮で行に限定）。
@@ -235,13 +255,14 @@ function updateToggleIcon(): void {
 }
 
 // ---- 有効/無効 ----
-export async function setEnabled(on: boolean): Promise<void> {
+// persist=false はサブフレーム用（storage への書き戻しをしない＝onChanged ループ防止）。
+export async function setEnabled(on: boolean, persist = true): Promise<void> {
   enabled = on;
   const html = document.documentElement;
   if (on) {
     if (!document.getElementById(STYLE_ID)) html.appendChild(styleEl());
     html.classList.add(HTML_CLASS);
-    scan(document.body);
+    if (document.body) scan(document.body);
     startObserver();
   } else {
     html.classList.remove(HTML_CLASS);
@@ -255,10 +276,33 @@ export async function setEnabled(on: boolean): Promise<void> {
   syncOurCard();
   window.dispatchEvent(new Event('zss:themechange')); // サイドパネル等のテーマ同期用
   updateToggleIcon();
+  if (persist) {
+    try {
+      await chrome.storage?.local.set({ [STORAGE_KEY]: on });
+    } catch {
+      /* storage 権限が無い環境では黙って無視 */
+    }
+  }
+}
+
+/** サブフレーム（教材iframe等）用: トグルUIは出さず、保存済みのダーク状態だけ適用＋追従。 */
+export async function initDarkModeFrame(): Promise<void> {
+  const applyWhenReady = (on: boolean): void => {
+    if (document.body) void setEnabled(on, false);
+    else document.addEventListener('DOMContentLoaded', () => void setEnabled(on, false), { once: true });
+  };
   try {
-    await chrome.storage?.local.set({ [STORAGE_KEY]: on });
+    const r = await chrome.storage?.local.get(STORAGE_KEY);
+    if (r?.[STORAGE_KEY]) applyWhenReady(true);
   } catch {
-    /* storage 権限が無い環境では黙って無視 */
+    /* ignore */
+  }
+  try {
+    chrome.storage?.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[STORAGE_KEY]) applyWhenReady(!!changes[STORAGE_KEY].newValue);
+    });
+  } catch {
+    /* ignore */
   }
 }
 

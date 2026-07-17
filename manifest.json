@@ -13,12 +13,14 @@
       "matches": ["https://www.nnn.ed.nico/*"],
       "js": ["observer.js"],
       "run_at": "document_start",
-      "world": "MAIN"
+      "world": "MAIN",
+      "all_frames": true
     },
     {
       "matches": ["https://www.nnn.ed.nico/*"],
       "js": ["dist/content.js"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "all_frames": true
     }
   ]
 }
