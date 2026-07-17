@@ -45,6 +45,17 @@
   } catch (e) {
     /* noop */
   }
+  // 起動確認ハンドシェイク: content.js からの ping に応答する（observer が生きている証明）。
+  try {
+    window.addEventListener('message', function (e) {
+      try {
+        if (e && e.data && e.data.__zss === 'ping') {
+          window.postMessage({ __zss: 'observer-ready' }, window.location.origin);
+        }
+      } catch (err) { /* noop */ }
+    });
+  } catch (e) { /* noop */ }
+
   // XMLHttpRequest を包む（loadend で 2xx のみ通知）。
   try {
     var oOpen = XMLHttpRequest.prototype.open;

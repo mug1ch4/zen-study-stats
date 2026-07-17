@@ -11,7 +11,6 @@ const WD = ['日', '月', '火', '水', '木', '金', '土'];
 
 export interface Nudge {
   kind: 'streak' | 'landmark' | 'goal' | 'plan' | 'progress';
-  icon: string;
   text: string;
 }
 
@@ -68,19 +67,19 @@ export function motivationNudges(ctx: MotivationCtx): Nudge[] {
 
   // 1) ストリーク（Loss Aversion / Goal-Gradient）— 時間依存で最優先
   if (ctx.streak.current >= 1 && ctx.todayAmount === 0) {
-    out.push({ kind: 'streak', icon: '🔥', text: `連続${ctx.streak.current}日を継続中。今日まだ0件です—1件でも進めれば記録は途切れません。` });
+    out.push({ kind: 'streak', text: `連続${ctx.streak.current}日を継続中。今日まだ0件です—1件でも進めれば記録は途切れません。` });
   } else if (ctx.streak.current >= 2 && ctx.streak.current === ctx.streak.longest - 1) {
-    out.push({ kind: 'streak', icon: '🔥', text: `あと1日で自己ベスト（${ctx.streak.longest}日連続）に並びます！` });
+    out.push({ kind: 'streak', text: `あと1日で自己ベスト（${ctx.streak.longest}日連続）に並びます！` });
   } else if (ctx.streak.current >= 3 && ctx.todayAmount > 0) {
-    out.push({ kind: 'streak', icon: '🔥', text: `連続${ctx.streak.current}日、いい調子です。今日も記録更新中。` });
+    out.push({ kind: 'streak', text: `連続${ctx.streak.current}日、いい調子です。今日も記録更新中。` });
   }
 
   // 2) Fresh Start（時間的節目）— 月曜/月初は仕切り直しに最適
   const d = ctx.today;
   if (d.getDate() === 1) {
-    out.push({ kind: 'landmark', icon: '🌱', text: `今日から新しい月。先月までは一区切り、ここから仕切り直して今月の目標を決めましょう（予測タブで設定できます）。` });
+    out.push({ kind: 'landmark', text: `今日から新しい月。先月までは一区切り、ここから仕切り直して今月の目標を決めましょう（予測タブで設定できます）。` });
   } else if (d.getDay() === 1) {
-    out.push({ kind: 'landmark', icon: '🌱', text: `新しい週の始まり。今週の"やる量"を決めると弾みがつきます（週初めは続けやすい時期です）。` });
+    out.push({ kind: 'landmark', text: `新しい週の始まり。今週の"やる量"を決めると弾みがつきます（週初めは続けやすい時期です）。` });
   }
 
   // 3) Goal-Gradient: 完了間近のコース（近い小目標を提示）
@@ -89,14 +88,14 @@ export function motivationNudges(ctx: MotivationCtx): Nudge[] {
     .filter((c) => c.rem > 0 && c.rem <= 5)
     .sort((a, b) => a.rem - b.rem)[0];
   if (near) {
-    out.push({ kind: 'goal', icon: '🎯', text: `「${near.title}」はあと${near.rem}教材で完了。まずここを終わらせると達成感で勢いが出ます。` });
+    out.push({ kind: 'goal', text: `「${near.title}」はあと${near.rem}教材で完了。まずここを終わらせると達成感で勢いが出ます。` });
   }
 
   // 4) Goal-Gradient: 全体のラストスパート / Endowed Progress: 積み上げた進捗の強調
   if (remaining > 0 && pct >= 75) {
-    out.push({ kind: 'goal', icon: '🏁', text: `全体の${pct}%が完了。ゴールまであと${100 - pct}%です—ここからはラストスパート。` });
+    out.push({ kind: 'goal', text: `全体の${pct}%が完了。ゴールまであと${100 - pct}%です—ここからはラストスパート。` });
   } else if (pct > 0) {
-    out.push({ kind: 'progress', icon: '📈', text: `すでに${ctx.passedMaterials}教材（全体の${pct}%）を完了済み。積み上げた分は消えません、この調子で。` });
+    out.push({ kind: 'progress', text: `すでに${ctx.passedMaterials}教材（全体の${pct}%）を完了済み。積み上げた分は消えません、この調子で。` });
   }
 
   // 5) Implementation Intention（いつ・どこで を具体化）— 常時出せる継続のコツ
@@ -104,7 +103,7 @@ export function motivationNudges(ctx: MotivationCtx): Nudge[] {
   const band = bestHourBand(ctx.hour.study);
   if (bw !== null || band) {
     const when = [bw !== null ? `${WD[bw]}曜` : null, band].filter(Boolean).join('の');
-    out.push({ kind: 'plan', icon: '🧭', text: `続けるコツ: あなたが最も進むのは【${when}】。「◯◯の後に${'教材を数本'}」のように"いつやるか"を決めておくと習慣になります。` });
+    out.push({ kind: 'plan', text: `続けるコツ: あなたが最も進むのは【${when}】。「◯◯の後に${'教材を数本'}」のように"いつやるか"を決めておくと習慣になります。` });
   }
 
   return out;

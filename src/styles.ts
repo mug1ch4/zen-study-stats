@@ -170,9 +170,8 @@ export const CSS = `
   border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;
   background: color-mix(in srgb, var(--primary) 8%, var(--surface));
 }
-.zss-motiv-head { font-size: 12px; font-weight: 800; color: var(--primary-strong); margin-bottom: 6px; }
-.zss-motiv-item { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; line-height: 1.55; color: var(--ink); margin-top: 4px; }
-.zss-motiv-ic { flex: 0 0 auto; font-size: 15px; line-height: 1.4; }
+.zss-motiv-head { font-size: 11px; font-weight: 700; color: var(--primary-strong); margin-bottom: 6px; letter-spacing: .02em; }
+.zss-motiv-item { font-size: 12.5px; line-height: 1.6; color: var(--ink); margin-top: 6px; padding-left: 10px; border-left: 2px solid color-mix(in srgb, var(--primary) 45%, transparent); }
 
 /* 分析タブ「あなたの学習傾向」 */
 .zss-analysis-head { font-size: 15px; font-weight: 800; margin: 2px 0; }

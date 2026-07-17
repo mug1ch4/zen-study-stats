@@ -150,13 +150,19 @@ function onCompletion(): void {
 }
 function listenCompletions(): void {
   window.addEventListener('message', (e) => {
-    if (e.source !== window) return;
+    // e.source は MAIN↔ISOLATED で一致しないことがあるため判定に使わない。__zss マーカーで識別。
     const d = e.data as { __zss?: string; courseId?: string; chapterId?: string } | null;
-    if (d && d.__zss === 'completion') {
+    if (!d || typeof d !== 'object') return;
+    if (d.__zss === 'observer-ready') {
+      if (DEV_NOTIFY) showToast('🟢 [dev] observer 稼働中（完了検知の準備OK）', { icon: '🟢', durationMs: 8000 });
+      return;
+    }
+    if (d.__zss === 'completion') {
       if (DEV_NOTIFY) showToast(`🔎 [dev] 完了通信を検知: course ${d.courseId} / ch ${d.chapterId}`, { icon: '🔎', durationMs: 9000 });
       onCompletion();
     }
   });
+  if (DEV_NOTIFY) window.postMessage({ __zss: 'ping' }, window.location.origin); // observer 起動確認（応答→🟢トースト）
 }
 
 function onRouteChange(): void {

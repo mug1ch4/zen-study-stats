@@ -66,7 +66,7 @@ export function renderLearningCard(data: LearningAmounts): HTMLElement {
 
   // --- 詳細（タブ）を常時直下に表示（トグルで隠さない＝この拡張の主役） ---
   const details = h('div', { class: 'zss-details open' }, []);
-  void populateDetails(details, tip, data, todayAmount);
+  void populateDetails(details, tip, data);
   const foot = card.querySelector('.zss-foot');
   card.insertBefore(details, foot);
   card.insertBefore(renderDataManage(), foot);
@@ -76,7 +76,7 @@ export function renderLearningCard(data: LearningAmounts): HTMLElement {
 
 /** 詳細を [推移][予測][教科] の3タブで直下に表示（遅延描画で重い処理を回避）。
  *  日別バー等の軽いグラフは data から即描画、長期・予測・教科は必要時に取得。 */
-async function populateDetails(container: HTMLElement, tip: Tooltip, data: LearningAmounts, todayAmount: number): Promise<void> {
+async function populateDetails(container: HTMLElement, tip: Tooltip, data: LearningAmounts): Promise<void> {
   // 教科データ(軽量)は予測・教科タブで共有（1回だけ取得）
   let coursesP: Promise<CourseMaterial[]> | null = null;
   const getCourses = () => (coursesP ??= fetchCourseMaterials());
@@ -87,7 +87,7 @@ async function populateDetails(container: HTMLElement, tip: Tooltip, data: Learn
   const done = [false, false, false, false];
   const renderers = [
     () => void renderRecentTab(panes[0], data, getSeriesOnce, tip),
-    () => void renderPredictTab(panes[1], getSeriesOnce, getCourses, tip, todayAmount, data),
+    () => void renderPredictTab(panes[1], getSeriesOnce, getCourses, tip, data),
     () => void renderSubjectsTab(panes[2], getCourses, tip),
     () => void renderAnalysisTab(panes[3], getSeriesOnce, getCourses, data),
   ];
@@ -223,7 +223,6 @@ async function renderPredictTab(
   getSeriesOnce: () => Promise<{ date: string; amount: number }[]>,
   getCourses: () => Promise<CourseMaterial[]>,
   tip: Tooltip,
-  todayAmount: number,
   data: LearningAmounts
 ): Promise<void> {
   pane.appendChild(h('div', { class: 'zss-empty' }, ['予測を計算中…']));
@@ -296,13 +295,20 @@ async function renderPredictTab(
       report.takingCourseCount > report.requiredCourseCount
         ? `※「学習数」（累計・日別）は非必修コースも含みます（履修${report.takingCourseCount} / 必修${report.requiredCourseCount}）。そのぶんペース推定は高めに出ることがあります。必修の進捗は「残教材」で判定しています。`
         : `※「学習数」（累計・日別）は全コースの合計です。必修の進捗は「残教材」で判定しています。`;
+    // デイリー達成は「教材消化の実差分」で判定（非必修も含む学習数ではなく、絶対的な完了教材数）。
+    // 当日始点＝今日より前の最新スナップの passed。それからの増分＝今日完了した教材数。
+    const todayStr = isoDate(zenToday());
+    const priorSnaps = mh.series.filter((p) => p.date < todayStr);
+    const baselinePassed = priorSnaps.length ? priorSnaps[priorSnaps.length - 1].passed : mh.series[0]?.passed ?? passed;
+    const todayDone = Math.max(0, passed - baselinePassed);
+
     pane.textContent = '';
-    pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayAmount, { savedTarget, electivesNote }));
+    pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayDone, { savedTarget, electivesNote }));
 
     // 通知（節目・デイリー達成）。永続dedupで繰り返さない。
     void notifyProgress(passed, total);
     const questTarget = pred.remaining > 0 && pred.daysLeft > 0 ? Math.max(1, Math.ceil(pred.remaining / pred.daysLeft)) : pred.remaining;
-    void notifyQuest(todayAmount, questTarget);
+    void notifyQuest(todayDone, questTarget);
   } catch (e) {
     console.warn('[ZSS] 完了予測の取得失敗:', e);
     pane.textContent = '';
@@ -400,10 +406,8 @@ async function renderAnalysisTab(
 
 function renderMotivation(nudges: Nudge[]): HTMLElement {
   return h('div', { class: 'zss-motiv' }, [
-    h('div', { class: 'zss-motiv-head' }, ['🔥 今日のひとこと']),
-    ...nudges.map((n) =>
-      h('div', { class: 'zss-motiv-item' }, [h('span', { class: 'zss-motiv-ic' }, [n.icon]), h('span', {}, [n.text])])
-    ),
+    h('div', { class: 'zss-motiv-head' }, ['今日のひとこと']),
+    ...nudges.map((n) => h('div', { class: 'zss-motiv-item' }, [n.text])),
   ]);
 }
 
@@ -483,11 +487,11 @@ function renderDailyQuest(pred: Prediction, todayAmount: number): HTMLElement | 
 
   return h('div', { class: 'zss-quest' + (met ? ' met' : '') }, [
     h('div', { class: 'zss-quest-top' }, [
-      h('span', { class: 'zss-quest-label' }, ['🎯 今日の目標']),
+      h('span', { class: 'zss-quest-label' }, ['今日の目標']),
       h('span', { class: 'zss-quest-count' }, [
         h('b', {}, [String(done)]),
         ` / ${target} 教材`,
-        h('span', { class: 'zss-quest-left' }, [met ? '　達成！🎉' : `　あと ${left}`]),
+        h('span', { class: 'zss-quest-left' }, [met ? '　達成' : `　あと ${left}`]),
       ]),
     ]),
     bar,
@@ -510,7 +514,7 @@ function renderPredictorSection(
   let verdict: HTMLElement;
   const mc = pred.montecarlo;
   if (pred.remaining === 0) {
-    verdict = h('div', { class: 'zss-pred-head ok' }, ['🎉 全教材を消化済み！']);
+    verdict = h('div', { class: 'zss-pred-head ok' }, ['全教材を消化済み']);
   } else if (mc && pred.pOnTime !== null) {
     const pct = Math.round(pred.pOnTime * 100);
     const p85 = md(mc.p85);
@@ -598,7 +602,7 @@ function renderPredictorSection(
       return;
     }
     if (pred.remaining <= 0) {
-      recOut.append(recMsg('good', '全教材を消化済みです 🎉'));
+      recOut.append(recMsg('good', '全教材を消化済みです'));
       return;
     }
     const rec = recommendedPace(pred.remaining, target);
@@ -626,7 +630,7 @@ function renderPredictorSection(
   dateInput.addEventListener('change', updateRec);
   updateRec();
   const targetBox = h('div', { class: 'zss-target-box' }, [
-    h('div', { class: 'zss-target-head' }, ['🎯 目標日から逆算']),
+    h('div', { class: 'zss-target-head' }, ['目標日から逆算']),
     h('div', { class: 'zss-target' }, [h('span', {}, ['完了させたい日:']), dateInput]),
     recOut,
   ]);

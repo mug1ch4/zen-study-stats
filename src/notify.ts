@@ -36,8 +36,7 @@ export async function notifyProgress(passedMat: number, totalMat: number): Promi
   const top = Math.max(...crossed);
   s.milestone = top;
   await save(s);
-  showToast(`全体の ${top}% が終わりました！${top >= 100 ? ' 🎉 全教材コンプリート！' : ' この調子で。'}`, {
-    icon: top >= 100 ? '🎉' : '📈',
+  showToast(top >= 100 ? '全教材が完了しました。おつかれさまでした。' : `全体の進捗が ${top}% に到達しました。`, {
     accent: '#1a8a4a',
   });
 }
@@ -50,7 +49,7 @@ export async function notifyQuest(todayAmount: number, target: number): Promise<
   if (s.questDate === today) return;
   s.questDate = today;
   await save(s);
-  showToast(`今日の必要最低限（${target}教材）を達成！ ✅ 予定どおりです。`, { icon: '✅', accent: '#1a8a4a' });
+  showToast(`今日の目標（${target}教材）を達成しました。`, { accent: '#1a8a4a' });
 }
 
 /** 5:00(JST)の日付更新が近い（4:30〜5:00）時に1日1回通知。 */
@@ -62,5 +61,5 @@ export async function notifyRolloverSoon(nowMs = Date.now()): Promise<void> {
   if (s.rolloverDate === today) return;
   s.rolloverDate = today;
   await save(s);
-  showToast('まもなく 5:00 で日付が更新されます。今日の記録が締まる前にあと少しいかがですか？', { icon: '⏰', accent: '#d9822b' });
+  showToast('まもなく5:00に学習日が切り替わります。今日の記録が締まります。', { accent: '#d9822b' });
 }

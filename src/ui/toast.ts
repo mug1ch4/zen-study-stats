@@ -51,9 +51,6 @@ export function showToast(message: string, opts: ToastOpts = {}): void {
     const el = document.createElement('div');
     el.className = 'toast';
     if (opts.accent) el.style.borderLeftColor = opts.accent;
-    const ic = document.createElement('span');
-    ic.className = 'ic';
-    ic.textContent = opts.icon ?? '📚';
     const msg = document.createElement('span');
     msg.className = 'msg';
     msg.textContent = message;
@@ -61,7 +58,14 @@ export function showToast(message: string, opts: ToastOpts = {}): void {
     x.className = 'x';
     x.textContent = '×';
     x.setAttribute('aria-label', '閉じる');
-    el.append(ic, msg, x);
+    if (opts.icon) {
+      const ic = document.createElement('span');
+      ic.className = 'ic';
+      ic.textContent = opts.icon;
+      el.append(ic, msg, x);
+    } else {
+      el.append(msg, x);
+    }
     wrap.appendChild(el);
     requestAnimationFrame(() => el.classList.add('in'));
 

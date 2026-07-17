@@ -66,7 +66,7 @@ function fillBanner(box: HTMLElement, r: RemainingWork, kind: 'course' | 'chapte
   box.style.opacity = '1';
   box.textContent = '';
   if (r.movieSeconds + r.movieCount + r.testCount + r.reportCount === 0) {
-    box.textContent = `🎉 ${scope}の教材は完了済みです！`;
+    box.textContent = `${scope}の教材は完了済みです。`;
     return;
   }
   const strong = (t: string) => {
