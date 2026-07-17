@@ -5,7 +5,8 @@ import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
-import { getSeries, getMaterialHistory, getTargetDate, setTargetDate } from '../history';
+import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats } from '../history';
+import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, type Section } from '../analysis';
 import { fetchReportProgresses } from '../api';
 import { fetchCourseMaterials } from '../courseApi';
 import { calendarData, trendPoints, streakInfo, type TrendMode } from '../deriveHistory';
@@ -79,12 +80,13 @@ async function populateDetails(container: HTMLElement, tip: Tooltip, data: Learn
   let seriesP: Promise<{ date: string; amount: number }[]> | null = null;
   const getSeriesOnce = () => (seriesP ??= getSeries());
 
-  const panes = [h('div', { class: 'zss-pane' }, []), h('div', { class: 'zss-pane' }, []), h('div', { class: 'zss-pane' }, [])];
-  const done = [false, false, false];
+  const panes = [0, 1, 2, 3].map(() => h('div', { class: 'zss-pane' }, []));
+  const done = [false, false, false, false];
   const renderers = [
     () => void renderRecentTab(panes[0], data, getSeriesOnce, tip),
     () => void renderPredictTab(panes[1], getSeriesOnce, getCourses, tip, todayAmount, data),
     () => void renderSubjectsTab(panes[2], getCourses, tip),
+    () => void renderAnalysisTab(panes[3], getSeriesOnce, getCourses, data),
   ];
   const select = (i: number) => {
     panes.forEach((p, j) => (p.style.display = j === i ? 'block' : 'none'));
@@ -93,7 +95,7 @@ async function populateDetails(container: HTMLElement, tip: Tooltip, data: Learn
       renderers[i]();
     }
   };
-  container.appendChild(tabBar(['推移', '予測', '教科'], select));
+  container.appendChild(tabBar(['推移', '予測', '教科', '分析'], select));
   for (const p of panes) container.appendChild(p);
   select(0);
 }
@@ -318,6 +320,56 @@ async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<Co
 
 function md(d: Date): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/** 分析タブ: 蓄積データから「あなたの学習傾向」を提示（曜日/月/祝日/一貫性/時間帯/必修）。 */
+async function renderAnalysisTab(
+  pane: HTMLElement,
+  getSeriesOnce: () => Promise<{ date: string; amount: number }[]>,
+  getCourses: () => Promise<CourseMaterial[]>,
+  data: LearningAmounts
+): Promise<void> {
+  pane.appendChild(h('div', { class: 'zss-empty' }, ['分析中…']));
+  try {
+    const series = await getSeriesOnce();
+    const [courses, report, hour] = await Promise.all([getCourses(), fetchReportProgresses(), getHourStats()]);
+    // 14日窓シードとマージ（新規でも分析可）
+    const dayMap = new Map<string, number>();
+    for (const p of series) dayMap.set(p.date, p.amount);
+    for (const d of data.daily_amount) if (d.amount != null) dayMap.set(d.date, d.amount);
+    const merged = [...dayMap.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, amount]) => ({ date, amount }));
+    const last14 = merged.slice(-14);
+    const recentPerDay = last14.length ? last14.reduce((a, p) => a + p.amount, 0) / last14.length : null;
+
+    const sections: Section[] = [
+      requiredAdvice(courses, report, recentPerDay),
+      weekdayTendency(merged),
+      timeOfDayTendency(hour),
+      monthlyTendency(merged),
+      holidayTendency(merged),
+      consistencyTendency(merged),
+    ];
+    pane.textContent = '';
+    pane.appendChild(h('div', { class: 'zss-analysis-head' }, ['あなたの学習傾向']));
+    pane.appendChild(h('div', { class: 'zss-analysis-sub' }, [`記録 ${merged.length}日ぶんから分析（データが増えるほど精度が上がります）`]));
+    for (const sec of sections) pane.appendChild(renderInsightSection(sec));
+  } catch (e) {
+    console.warn('[ZSS] 分析の取得失敗:', e);
+    pane.textContent = '';
+    pane.appendChild(h('div', { class: 'zss-empty' }, ['分析データを取得できませんでした。']));
+  }
+}
+
+function renderInsightSection(sec: Section): HTMLElement {
+  return h('div', { class: 'zss-insight-sec' }, [
+    h('div', { class: 'zss-insight-title' }, [sec.title]),
+    ...sec.insights.map((i) =>
+      h('div', { class: 'zss-insight ' + i.kind }, [
+        h('span', { class: 'ic' }, [i.kind === 'good' ? '✓' : i.kind === 'warn' ? '！' : '·']),
+        ' ' + i.text,
+      ])
+    ),
+  ]);
 }
 
 /** 教科別の残作業内訳（残教材の多い順・未着手を明示）。 */

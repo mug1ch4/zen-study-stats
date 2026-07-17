@@ -164,6 +164,17 @@ export const CSS = `
 
 .zss-pred-caveat { font-size: 10px; color: var(--faint); margin-top: 10px; line-height: 1.5; }
 
+/* 分析タブ「あなたの学習傾向」 */
+.zss-analysis-head { font-size: 15px; font-weight: 800; margin: 2px 0; }
+.zss-analysis-sub { font-size: 11px; color: var(--faint); margin-bottom: 10px; }
+.zss-insight-sec { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; background: var(--surface-2); }
+.zss-insight-title { font-size: 12px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+.zss-insight { font-size: 12px; line-height: 1.55; color: var(--ink); }
+.zss-insight .ic { display: inline-block; width: 1.1em; font-weight: 700; }
+.zss-insight.good { color: var(--success); }
+.zss-insight.warn { color: #d9822b; }
+.zss-insight.note { color: var(--muted); }
+
 /* 現在ペースからの分析 */
 .zss-analysis { display: flex; flex-direction: column; gap: 3px; margin: 8px 0 2px; }
 .zss-analysis-line { font-size: 12px; color: var(--ink); }

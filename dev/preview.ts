@@ -1,7 +1,7 @@
 import type { LearningAmounts } from '../src/api';
 import { CSS } from '../src/styles';
 import { renderLearningCard } from '../src/ui/learningCard';
-import { __setMockHistory, __setMockMaterialHist, type History } from '../src/history';
+import { __setMockHistory, __setMockMaterialHist, __setMockHour, type History } from '../src/history';
 import { __setMockVolumes } from '../src/courseStats';
 import { __setMockCourseMaterials } from '../src/courseApi';
 import { __setMockReport } from '../src/api';
@@ -68,6 +68,12 @@ function mockHistory(): History {
   return h;
 }
 __setMockHistory(mockHistory());
+
+// 時間帯モック（夜型: 20〜22時に学習ピーク）
+const hs = new Array(24).fill(0);
+const hv = new Array(24).fill(0);
+[[20, 40], [21, 55], [22, 30], [16, 12], [8, 6], [12, 8]].forEach(([h, n]) => { hs[h] = n; hv[h] = Math.round(n / 8) + 1; });
+__setMockHour(hs, hv);
 
 const sample: LearningAmounts = {
   total_amount: 230,

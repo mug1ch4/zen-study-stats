@@ -155,6 +155,51 @@ export async function maybeDailySnapshot(work: () => Promise<void>): Promise<voi
   }
 }
 
+// --- 時間帯の傾向（APIに時刻が無いため、/setting を開くたびに自前記録） ---
+// study[h]: 同一学習日内の連続訪問で増えた学習数を、後の訪問の時間(JST)に帰属（=その頃に進めた）。
+// visit[h]: その時間にサイトを開いた回数（アクセス傾向・弱い代理指標）。
+const KEY_HOUR = 'zss:hourStats'; // { study:number[24], visit:number[24], lastDay, lastAmount, lastTs }
+interface HourStore { study: number[]; visit: number[]; lastDay: string; lastAmount: number; lastTs: number }
+const zeros24 = () => new Array(24).fill(0) as number[];
+function jstHour(nowMs: number): number {
+  return new Date(nowMs + 9 * 3600 * 1000).getUTCHours();
+}
+/** 訪問を記録（20分以内の連続呼び出しはSPA再描画とみなしスキップ）。 */
+export async function recordVisit(nowMs: number, todayAmount: number): Promise<void> {
+  if (memOverride) return;
+  try {
+    const r = await chrome.storage.local.get([KEY_HOUR]);
+    const s = (r?.[KEY_HOUR] as HourStore) ?? { study: zeros24(), visit: zeros24(), lastDay: '', lastAmount: 0, lastTs: 0 };
+    if (nowMs - (s.lastTs ?? 0) < 20 * 60 * 1000) return; // 直近20分は同一訪問扱い
+    const h = jstHour(nowMs);
+    const day = zenTodayISO(nowMs);
+    s.visit[h] = (s.visit[h] ?? 0) + 1;
+    if (s.lastDay === day && todayAmount > s.lastAmount) {
+      s.study[h] = (s.study[h] ?? 0) + (todayAmount - s.lastAmount); // 同日内の増分を帰属
+    }
+    s.lastDay = day;
+    s.lastAmount = todayAmount;
+    s.lastTs = nowMs;
+    await chrome.storage.local.set({ [KEY_HOUR]: s });
+  } catch {
+    /* ignore */
+  }
+}
+export async function getHourStats(): Promise<{ study: number[]; visit: number[] }> {
+  if (memOverride) return { study: mockHour?.study ?? zeros24(), visit: mockHour?.visit ?? zeros24() };
+  try {
+    const r = await chrome.storage.local.get([KEY_HOUR]);
+    const s = r?.[KEY_HOUR] as HourStore | undefined;
+    return { study: s?.study ?? zeros24(), visit: s?.visit ?? zeros24() };
+  } catch {
+    return { study: zeros24(), visit: zeros24() };
+  }
+}
+let mockHour: { study: number[]; visit: number[] } | null = null;
+export function __setMockHour(study: number[], visit: number[]): void {
+  mockHour = { study, visit };
+}
+
 // --- 目標日（「目標日から逆算」の設定値を記憶） ---
 const KEY_TARGET = 'zss:targetDate'; // "YYYY-MM-DD"
 export async function getTargetDate(): Promise<string | null> {

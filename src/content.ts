@@ -4,7 +4,7 @@ import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } fro
 import { fetchMaterialTotals } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, syncOurCard, rescanSoon, ensureToggleMounted } from './darkmode';
-import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials } from './history';
+import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit } from './history';
 import { ensureCourseSummary } from './summaryInject';
 
 const SETTING_PATH = '/setting';
@@ -91,11 +91,28 @@ function observeDom(): void {
   obs.observe(document.documentElement, { childList: true, subtree: true });
 }
 
+// 時間帯の傾向: サイト全体で学習中に定期サンプリング（study は講座/動画ページで行うため）。
+// メモリゲートで fetch を抑制し、実記録は history 側の20分ストレージゲートで冪等。
+let lastVisitAttempt = 0;
+async function maybeRecordVisit(): Promise<void> {
+  const now = Date.now();
+  if (now - lastVisitAttempt < 20 * 60 * 1000) return;
+  lastVisitAttempt = now;
+  try {
+    const la = await fetchLearningAmounts(); // 当日学習数の最新値（増分を時間帯に帰属するため都度取得）
+    const today = la.daily_amount[la.daily_amount.length - 1];
+    await recordVisit(now, today?.amount ?? 0);
+  } catch {
+    /* ignore */
+  }
+}
+
 function onRouteChange(): void {
   sync(); // /setting 出入りでカードを適用/撤去
   rescanSoon(); // ダーク有効時、新ページを再スキャン（取りこぼし防止）
   ensureToggleMounted(); // ナビ再描画でトグルが消えても再設置
   void ensureCourseSummary(); // コース/チャプターの残りサマリ
+  void maybeRecordVisit(); // 学習中の時間帯サンプリング（20分間隔）
 }
 
 function startup(): void {
@@ -122,6 +139,7 @@ function startup(): void {
   window.addEventListener('zss:locationchange', onRouteChange);
   sync();
   void ensureCourseSummary();
+  void maybeRecordVisit(); // 起動時にも1回サンプリング
 }
 
 function main(): void {
