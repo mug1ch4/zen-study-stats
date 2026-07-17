@@ -27,7 +27,7 @@ import { renderDataManage } from './dataManage';
 import type { CourseMaterial } from '../courseApi';
 
 /** 統合「学習数」カード。常時表示はコンパクトな要点のみ、詳細（グラフ）はタブで直下に展開。 */
-export function renderLearningCard(data: LearningAmounts): HTMLElement {
+export function renderLearningCard(data: LearningAmounts, opts?: { defaultTab?: number }): HTMLElement {
   const kpis = computeKpis(data);
   const tip = new Tooltip();
 
@@ -47,7 +47,10 @@ export function renderLearningCard(data: LearningAmounts): HTMLElement {
         h('h2', { class: 'zss-title' }, ['学習数']),
         h('p', { class: 'zss-sub' }, ['直近14日間 · 2週間ぶんの記録']),
       ]),
-      h('span', { class: 'zss-badge' }, ['表示専用 · read-only']),
+      h('div', { class: 'zss-head-right' }, [
+        h('span', { class: 'zss-badge' }, ['表示専用 · read-only']),
+        h('span', { class: 'zss-ver' }, [`v${__APP_VERSION__}`]),
+      ]),
     ]),
 
     // 要点ストリップ（1行・コンパクト）
@@ -67,7 +70,7 @@ export function renderLearningCard(data: LearningAmounts): HTMLElement {
 
   // --- 詳細（タブ）を常時直下に表示（トグルで隠さない＝この拡張の主役） ---
   const details = h('div', { class: 'zss-details open' }, []);
-  void populateDetails(details, tip, data);
+  void populateDetails(details, tip, data, opts?.defaultTab ?? 0);
   const foot = card.querySelector('.zss-foot');
   card.insertBefore(details, foot);
   card.insertBefore(renderDataManage(), foot);
@@ -77,7 +80,7 @@ export function renderLearningCard(data: LearningAmounts): HTMLElement {
 
 /** 詳細を [推移][予測][教科] の3タブで直下に表示（遅延描画で重い処理を回避）。
  *  日別バー等の軽いグラフは data から即描画、長期・予測・教科は必要時に取得。 */
-async function populateDetails(container: HTMLElement, tip: Tooltip, data: LearningAmounts): Promise<void> {
+async function populateDetails(container: HTMLElement, tip: Tooltip, data: LearningAmounts, defaultTab = 0): Promise<void> {
   // 教科データ(軽量)は予測・教科タブで共有（1回だけ取得）
   let coursesP: Promise<CourseMaterial[]> | null = null;
   const getCourses = () => (coursesP ??= fetchCourseMaterials());
@@ -108,15 +111,15 @@ async function populateDetails(container: HTMLElement, tip: Tooltip, data: Learn
     if (done[2]) void renderSubjectsTab(panes[2], getCourses, tip);
   };
   window.addEventListener('zss:completion', onCompletion);
-  container.appendChild(tabBar(['推移', '予測', '教科', '分析'], select));
+  container.appendChild(tabBar(['推移', '予測', '教科', '分析'], select, defaultTab));
   for (const p of panes) container.appendChild(p);
-  select(0);
+  select(defaultTab);
 }
 
-function tabBar(labels: string[], onSelect: (i: number) => void): HTMLElement {
+function tabBar(labels: string[], onSelect: (i: number) => void, initial = 0): HTMLElement {
   const bar = h('div', { class: 'zss-tabs' }, []);
   const btns = labels.map((l, i) => {
-    const b = h('button', i === 0 ? { class: 'on' } : {}, [l]);
+    const b = h('button', i === initial ? { class: 'on' } : {}, [l]);
     b.addEventListener('click', () => {
       btns.forEach((x, j) => x.classList.toggle('on', j === i));
       onSelect(i);

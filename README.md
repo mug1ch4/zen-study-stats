@@ -10,15 +10,15 @@
 > 利用は自己責任で、各サービスの利用規約の範囲内でご使用ください。Chrome ウェブストアには公開しておらず、
 > 下記「[導入](#導入chrome-へ読み込み)」の手順（リリースzip または ソースビルド）で読み込みます。
 
-## スクリーンショット
-> 画像はすべて**モックデータ**（サンプル教科名・架空の数値）です。実際の画面とは、本家サイトの
-> デザイン更新・データ内容・ブラウザ環境などにより**細部が異なる場合があります**。
+## ライブデモ
 
-| 予測（北極星） | 推移 |
-|:--:|:--:|
-| ![完了予測・デイリークエスト・バーンダウン](docs/images/predict.png) | ![要点＋日別/曜日グラフ](docs/images/overview.png) |
-| **教科別の残り（残/総）** | **サイト全体ダークモード** |
-| ![教科別の残り](docs/images/subjects.png) | ![ダークモード](docs/images/dark.png) |
+**▶ [ライブデモを開く](https://mug1ch4.github.io/zen-study-stats/)** — サンプル（モック）データを
+**実際の描画コードに通した「本物のカード」**です。目玉の「予測」タブを既定で開き、
+`推移 / 予測 / 教科 / 分析` の各タブ操作・ライト/ダーク切替・グラフのアニメーションをそのまま試せます。
+（数値はサンプルで、実際の学習記録ではありません。）
+
+> デモはスクリーンショットではなく、`npm run build`（`scripts/build-demo.mjs`）で `docs/index.html` に
+> 自己完結HTMLとして生成され、GitHub Pages(`/docs`)で配信。**常に最新のコードを反映**します。
 
 ## 導入（Chrome へ読み込み）
 **A. リリースzipから（ビルド不要・おすすめ）**
@@ -118,7 +118,9 @@ src/
   motivation.ts        モチベ・ナッジ（行動科学の実証手法・純関数）
   notify.ts            トースト通知のトリガ判定（永続dedup）
   ui/                  learningCard / volumeTable / dataManage / dataTable / tooltip / sidePanel / toast
-dev/                   preview.html / preview.ts（ブラウザ確認用・モックデータ）
+dev/                   preview.html / preview.ts（vite dev のプレビュー）/ demo.ts（配布用ライブデモ）/ mock.ts（共通モックデータ）
+scripts/               build-demo.mjs（demo.ts を自己完結HTML docs/index.html にバンドル）
+docs/                  index.html（ライブデモ・GitHub Pages 配信）
 ```
 
 ## 補足

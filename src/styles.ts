@@ -69,6 +69,8 @@ export const CSS = `
   font-size: 11px; color: var(--primary-strong); background: var(--zero-tint);
   border-radius: 999px; padding: 3px 10px; font-weight: 600; white-space: nowrap;
 }
+.zss-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.zss-ver { font-size: 10px; color: var(--faint); letter-spacing: .02em; font-variant-numeric: tabular-nums; }
 
 .zss-hero { display: flex; align-items: baseline; gap: 10px; margin: 14px 0 2px; flex-wrap: wrap; }
 .zss-hero .n { font-size: 40px; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
