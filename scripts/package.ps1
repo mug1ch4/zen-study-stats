@@ -4,8 +4,11 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-$mv = (Get-Content manifest.json -Raw | ConvertFrom-Json).version
+# -Encoding UTF8 必須: Windows PowerShell 5.1 はBOM無しUTF-8をShift-JIS扱いし、
+# 日本語を含むJSONのパースに失敗する（npm run は powershell.exe を起動しがち）。
+$version = (Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
+$mv = (Get-Content manifest.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
+if (-not $version) { throw 'failed to read version from package.json' }
 if ($version -ne $mv) { throw "version mismatch: package.json=$version manifest.json=$mv" }
 
 $zip = "zen-study-stats-$version.zip"
