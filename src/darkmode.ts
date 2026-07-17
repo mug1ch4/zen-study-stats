@@ -296,6 +296,7 @@ function makeNavButton(template: HTMLElement): HTMLElement {
   btn.id = NAV_BTN_ID;
   btn.removeAttribute('href'); btn.removeAttribute('aria-current');
   btn.setAttribute('role', 'button'); btn.style.cursor = 'pointer';
+  btn.title = 'テーマ切替（実験的機能: 表示が崩れる場合はライトに戻してください）';
   const i = btn.querySelector('i');
   const icon = themeIcon(enabled, i?.getAttribute('class') ?? '');
   icon.setAttribute('width', String(size)); icon.setAttribute('height', String(size));
@@ -314,7 +315,8 @@ function ensureFloating(): void {
   const st = document.createElement('style');
   st.textContent = `.fab{position:fixed;right:16px;bottom:16px;z-index:2147483646;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:19px;border:1px solid rgba(0,0,0,.1);cursor:pointer;background:#fff;color:#333;box-shadow:0 3px 14px rgba(0,0,0,.22);font:600 12px/1 system-ui,sans-serif}.fab.on{background:#2a2f37;color:#f2f2f2}.fab .em{font-size:15px}`;
   const btn = document.createElement('button'); btn.className = 'fab'; btn.type = 'button';
-  btn.setAttribute('aria-label', 'ライト/ダーク切替');
+  btn.setAttribute('aria-label', 'ライト/ダーク切替（実験的機能）');
+  btn.title = 'テーマ切替（実験的機能: 表示が崩れる場合はライトに戻してください）';
   btn.addEventListener('click', () => { animateNextChange(); void setEnabled(!enabled); });
   root.append(st, btn);
   (document.body ?? document.documentElement).appendChild(host);
