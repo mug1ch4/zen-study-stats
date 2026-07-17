@@ -86,7 +86,8 @@ export interface Prediction {
   pOnTime: number | null; // 締切に間に合う確率
   confidence: { level: 'low' | 'medium' | 'high'; days: number }; // 予測の確度（データ成熟度）
   analysis: {
-    tomorrowEstimate: number | null; // 明日の推定消化数（曜日重み×現在ペース）
+    tomorrowEstimate: number | null; // 明日の推定消化数（曜日重み×現在ペース・＝やりそうな量）
+    tomorrowRequired: number | null; // 明日の最低必要数（締切から逆算・曜日重み調整。間に合わせるための量）
     trend: 'up' | 'down' | 'flat' | null; // 直近のペース傾向
     trendPct: number | null; // 直近半分 vs 前半分の変化率(%)
   };
@@ -211,13 +212,15 @@ export function computePrediction(input: PredInput): Prediction {
   const level: Prediction['confidence']['level'] =
     sampleDays >= 14 && relSE < 0.22 ? 'high' : sampleDays >= 6 ? 'medium' : 'low';
 
-  // 分析: 明日の推定消化 & 直近のペーストレンド
+  // 分析: 明日の「やりそうな量(投影)」と「最低必要量(締切から逆算)」＆ 直近のペーストレンド
   const curPerDay = currentPerWeek !== null ? currentPerWeek / 7 : null;
   let tomorrowEstimate: number | null = null;
-  if (curPerDay !== null && remaining > 0) {
+  let tomorrowRequired: number | null = null;
+  if (remaining > 0) {
     const tmr = new Date(today.getTime() + DAY);
     const w = isHoliday(isoLocal(tmr)) ? weights[0] : weights[tmr.getDay()];
-    tomorrowEstimate = Math.max(0, Math.round(curPerDay * w));
+    if (curPerDay !== null) tomorrowEstimate = Math.max(0, Math.round(curPerDay * w));
+    if (daysLeft >= 1) tomorrowRequired = Math.max(0, Math.ceil((remaining / daysLeft) * w));
   }
   let trend: Prediction['analysis']['trend'] = null;
   let trendPct: number | null = null;
@@ -245,7 +248,7 @@ export function computePrediction(input: PredInput): Prediction {
     remainingReports: input.remainingReports, estimates, untouchedSubjects, projectionCurve,
     montecarlo, pOnTime,
     confidence: { level, days: sampleDays },
-    analysis: { tomorrowEstimate, trend, trendPct },
+    analysis: { tomorrowEstimate, tomorrowRequired, trend, trendPct },
   };
 }
 

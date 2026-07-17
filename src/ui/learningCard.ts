@@ -605,7 +605,17 @@ function renderAnalysis(pred: Prediction): HTMLElement | null {
     else if (dv >= 1) rows.push(analysisLine('warn', `このペースだと完了は ${md(pred.projectedFinish)} 頃（締切を ${dv}日超過）`));
     else rows.push(analysisLine('note', `完了見込みは締切とほぼ同時（${md(pred.projectedFinish)}）`));
   }
-  if (a.tomorrowEstimate !== null) rows.push(analysisLine('note', `明日の目安: 約 ${a.tomorrowEstimate} 教材（曜日の傾向から）`));
+  // 明日の目安: 締切オーバーの見込み(!onTrack)なら「最低必要分(逆算)」、順調なら「投影(やりそうな量)」。
+  if (!pred.onTrack && a.tomorrowRequired !== null) {
+    if (a.tomorrowRequired >= 1) {
+      rows.push(analysisLine('warn', `間に合わせるには明日 最低 ${a.tomorrowRequired} 教材${a.tomorrowEstimate !== null ? `（現ペースの見込みは ${a.tomorrowEstimate}）` : ''}`));
+    } else {
+      const reqFlat = isFinite(pred.requiredPerWeek) ? Math.ceil(pred.requiredPerWeek / 7) : pred.remaining;
+      rows.push(analysisLine('warn', `間に合わせるには平均 ${reqFlat} 教材/日 必要（明日は曜日的に少なめでも他日で挽回）`));
+    }
+  } else if (a.tomorrowEstimate !== null) {
+    rows.push(analysisLine('note', `明日の目安: 約 ${a.tomorrowEstimate} 教材（曜日の傾向から）`));
+  }
   if (a.trend === 'down') rows.push(analysisLine('warn', `ペースが落ちています${a.trendPct !== null ? `（直近 ${a.trendPct}%）` : ''}`));
   else if (a.trend === 'up') rows.push(analysisLine('good', `ペースが上がっています${a.trendPct !== null ? `（+${a.trendPct}%）` : ''}`));
   if (!rows.length) return null;
