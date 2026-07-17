@@ -347,6 +347,12 @@ export const CSS = `
 .zss-supp-toggle { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); margin-top: 8px; cursor: pointer; user-select: none; }
 .zss-supp-toggle input { accent-color: var(--primary); cursor: pointer; }
 
+/* --- 通知履歴 --- */
+.zss-nlog { max-height: 240px; overflow-y: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.zss-nlog-row { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px; border-left: 3px solid var(--primary); background: var(--surface-2); border-radius: 4px; padding: 4px 8px; }
+.zss-nlog-t { flex: 0 0 auto; color: var(--faint); font-variant-numeric: tabular-nums; }
+.zss-nlog-m { color: var(--ink); line-height: 1.45; }
+
 /* tooltip */
 .zss-tip {
   position: fixed; z-index: 2147483647; pointer-events: none;

@@ -41,10 +41,41 @@ export interface ToastOpts {
   icon?: string;
   accent?: string;
   durationMs?: number;
+  /** false で通知履歴に残さない（devトースト等）。既定は記録する。 */
+  log?: boolean;
 }
 
-/** トーストを1件表示（数秒で自動消滅・クリックで即閉じ）。 */
+// --- 通知履歴 ---
+// トーストは消えて終わりだと設計上よろしくないため、表示と同時に chrome.storage へ記録し
+// カードの「通知履歴」から見返せるようにする（最新60件・read-only データ）。
+const LOG_KEY = 'zss:notifyLog';
+export interface NotifyLogEntry { ts: number; text: string; accent?: string }
+const LOG_MAX = 60;
+
+async function appendLog(entry: NotifyLogEntry): Promise<void> {
+  try {
+    const r = await chrome.storage?.local.get([LOG_KEY]);
+    const log = ((r?.[LOG_KEY] as NotifyLogEntry[]) ?? []).slice(-LOG_MAX + 1);
+    log.push(entry);
+    await chrome.storage?.local.set({ [LOG_KEY]: log });
+  } catch {
+    /* プレビュー等 storage なし環境では記録しない */
+  }
+}
+
+/** 通知履歴（新しい順）。 */
+export async function getNotifyLog(): Promise<NotifyLogEntry[]> {
+  try {
+    const r = await chrome.storage?.local.get([LOG_KEY]);
+    return (((r?.[LOG_KEY] as NotifyLogEntry[]) ?? []) as NotifyLogEntry[]).slice().reverse();
+  } catch {
+    return [];
+  }
+}
+
+/** トーストを1件表示（数秒で自動消滅・クリックで即閉じ・既定で履歴に記録）。 */
 export function showToast(message: string, opts: ToastOpts = {}): void {
+  if (opts.log !== false) void appendLog({ ts: Date.now(), text: message, accent: opts.accent });
   try {
     const root = ensureHost();
     const wrap = root.querySelector('.wrap') as HTMLElement;

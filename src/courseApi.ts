@@ -57,6 +57,21 @@ export function __setMockCourseMaterials(c: CourseMaterial[]): void {
   mockCourseMaterials = c;
 }
 
+// やりかけの章（Zeigarnik効果: 「あと少しで章完了」の提示用）。
+// fetchCourseMaterials が取得する batch 応答の章進捗から副産物として抽出（追加リクエストなし）。
+export interface NearChapter {
+  courseId: number;
+  courseTitle: string;
+  chapterId: number;
+  chapterTitle: string;
+  remaining: number; // 章完了まで残り教材数
+}
+let nearDoneChapters: NearChapter[] = [];
+/** 直近の取得で見つかった「あと3教材以内で章完了」の章（残り昇順）。 */
+export function getNearDoneChapters(): NearChapter[] {
+  return nearDoneChapters;
+}
+
 // 短時間の重複呼び出し（カード描画＋日次スナップ＋サイドパネル等）をまとめるための
 // 同時実行共有＋短TTLキャッシュ。完了検知は最新値が必要なので fresh:true でバイパスする。
 const MAT_TTL_MS = 15_000;
@@ -80,6 +95,22 @@ export async function fetchCourseMaterials(opts?: { fresh?: boolean }): Promise<
       total: c.progress?.total_materials ?? 0,
       passed: c.progress?.passed_materials ?? 0,
     }));
+    // 副産物: やりかけの章（着手済み・あと3教材以内で章完了）を抽出
+    nearDoneChapters = batch
+      .flatMap((c) =>
+        (c.chapters ?? [])
+          .filter((ch) => ch.progress && ch.progress.total_count > 0 && ch.progress.passed_count > 0)
+          .map((ch) => ({
+            courseId: c.id,
+            courseTitle: titleById.get(c.id) ?? c.title,
+            chapterId: ch.id,
+            chapterTitle: ch.title,
+            remaining: Math.max(0, ch.progress!.total_count - ch.progress!.passed_count),
+          }))
+      )
+      .filter((x) => x.remaining > 0 && x.remaining <= 3)
+      .sort((a, b) => a.remaining - b.remaining)
+      .slice(0, 5);
     matCache = { at: Date.now(), data };
     return data;
   })();

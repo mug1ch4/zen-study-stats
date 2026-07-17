@@ -26,10 +26,11 @@ export function quantile(xs: number[], q: number): number {
 export const median = (xs: number[]): number => quantile(xs, 0.5);
 
 // --- 正規/カイ二乗の裾確率（有意性判定用の近似） ---
-/** 標準正規の上側確率 P(Z>z)。Abramowitz-Stegun 7.1.26 の erf 近似。 */
+/** 標準正規の上側確率 P(Z>z)。Φ(z)=0.5(1+erf(z/√2))・erf は Abramowitz-Stegun 7.1.26 近似。 */
 export function normSf(z: number): number {
-  const t = 1 / (1 + 0.3275911 * Math.abs(z));
-  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z);
+  const x = Math.abs(z) / Math.SQRT2; // ← erf の引数は z/√2（スケール必須）
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
   const cdf = 0.5 * (1 + (z < 0 ? -y : y));
   return 1 - cdf;
 }

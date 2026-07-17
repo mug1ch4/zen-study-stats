@@ -214,6 +214,31 @@ export function timeOfDayTendency(hour: { study: number[]; visit: number[] }): S
   return { title: '時間帯の傾向', insights: [{ kind: 'note', text: 'PCで動画/テスト等を完了すると、その時刻を記録します（APIに時刻が無いため、本家の完了通信を観測して自前計測）。数回で傾向が出ます。' }] };
 }
 
+/** これまでの歩み: 記録開始からの累計をひとまとめ（Wrapped風の常設サマリ・Endowed Progress）。 */
+export function journeySummary(
+  series: Series,
+  passedMat: number,
+  totalMat: number,
+  longestStreak: number,
+  achUnlocked: number,
+  achTotal: number
+): Section {
+  if (!series.length) {
+    return { title: 'これまでの歩み', insights: [{ kind: 'note', text: '記録が貯まると、開始からの歩みをまとめて表示します。' }] };
+  }
+  const first = series[0].date;
+  const d = parseDate(first);
+  const totalAmount = series.reduce((a, p) => a + p.amount, 0);
+  const studied = series.filter((p) => p.amount > 0).length;
+  const best = series.reduce((a, p) => (p.amount > a.amount ? p : a), series[0]);
+  const insights: Insight[] = [
+    { kind: 'good', text: `${d.getMonth() + 1}/${d.getDate()} の記録開始から ${series.length}日・学習${studied}日・学習数 累計${totalAmount}件。` },
+    { kind: 'note', text: `教材 ${passedMat}/${totalMat} 完了（${pct(passedMat, totalMat)}%）・最長連続 ${longestStreak}日・実績 ${achUnlocked}/${achTotal}。` },
+    { kind: 'note', text: `ベスト日: ${Number(best.date.slice(5, 7))}/${Number(best.date.slice(8, 10))} の ${best.amount}件。積み上げた分は消えません。` },
+  ];
+  return { title: 'これまでの歩み', insights };
+}
+
 /** 所要時間の実測: 完了検知の間隔から蓄積した「教科×種別の所要」を詳細表示。 */
 export function workTimeTendency(
   wt: Record<string, { test?: { min: number; q: number; n: number }; report?: { min: number; q: number; n: number } }>,

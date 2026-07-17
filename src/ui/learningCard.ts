@@ -9,10 +9,13 @@ import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourSta
 import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
 import { evaluateCalibration } from '../calibration';
 import { zenMondayISO } from '../format';
-import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, type Section } from '../analysis';
+import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, type Section } from '../analysis';
+import { buildPlanIcs, downloadText } from '../ics';
+import { getNearDoneChapters } from '../courseApi';
 import { motivationNudges, type Nudge } from '../motivation';
 import { countUp } from '../anim';
 import { notifyProgress, notifyQuest } from '../notify';
+import { getNotifyLog } from './toast';
 import { fetchReportProgresses } from '../api';
 import { fetchCourseMaterials } from '../courseApi';
 import { calendarData, trendPoints, streakInfo, type TrendMode } from '../deriveHistory';
@@ -76,9 +79,38 @@ export function renderLearningCard(data: LearningAmounts, opts?: { defaultTab?: 
   void populateDetails(details, tip, data, opts?.defaultTab ?? 0);
   const foot = card.querySelector('.zss-foot');
   card.insertBefore(details, foot);
+  card.insertBefore(renderNotifyLog(), foot);
   card.insertBefore(renderDataManage(), foot);
 
   return card;
+}
+
+/** 通知履歴（トーストは消えるが、ここで見返せる）。開いた時に読み込み。 */
+function renderNotifyLog(): HTMLElement {
+  const body = h('div', { class: 'zss-nlog' }, []);
+  const det = h('details', { class: 'zss-fold' }, [h('summary', {}, ['通知履歴']), body]) as HTMLDetailsElement;
+  const fill = async (): Promise<void> => {
+    const log = await getNotifyLog();
+    body.textContent = '';
+    if (!log.length) {
+      body.appendChild(h('div', { class: 'zss-empty' }, ['まだ通知はありません。節目達成・デイリー/週間目標・週次レビューなどの通知がここに残ります。']));
+      return;
+    }
+    for (const e of log) {
+      const d = new Date(e.ts);
+      const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const row = h('div', { class: 'zss-nlog-row' }, [
+        h('span', { class: 'zss-nlog-t' }, [when]),
+        h('span', { class: 'zss-nlog-m' }, [e.text]),
+      ]);
+      if (e.accent) row.style.borderLeftColor = e.accent;
+      body.appendChild(row);
+    }
+  };
+  det.addEventListener('toggle', () => {
+    if (det.open) void fill();
+  });
+  return det;
 }
 
 /** 詳細を [推移][予測][教科] の3タブで直下に表示（遅延描画で重い処理を回避）。
@@ -480,7 +512,22 @@ async function renderAnalysisTab(
     const last14 = merged.slice(-14);
     const recentPerDay = last14.length ? last14.reduce((a, p) => a + p.amount, 0) / last14.length : null;
 
+    // 実績の判定を先に（歩みサマリで使う）
+    const streak0 = streakInfo(merged);
+    const totalMat0 = courses.reduce((a, c) => a + c.total, 0);
+    const passedMat0 = courses.reduce((a, c) => a + c.passed, 0);
+    const achInput0: AchInput = {
+      longestStreak: streak0.longest,
+      studiedDays: merged.filter((p) => p.amount > 0).length,
+      passedMaterials: passedMat0,
+      totalMaterials: totalMat0,
+      completedCourses: courses.filter((c) => c.total > 0 && c.passed >= c.total).length,
+      totalCourses: courses.filter((c) => c.total > 0).length,
+    };
+    const unlocked0 = new Set(computeUnlocked(achInput0));
+
     const sections: Section[] = [
+      journeySummary(merged, passedMat0, totalMat0, streak0.longest, unlocked0.size, ACHIEVEMENTS.length),
       requiredAdvice(courses, report, recentPerDay),
       trendTendency(merged),
       distributionSummary(merged),
@@ -492,13 +539,11 @@ async function renderAnalysisTab(
       consistencyTendency(merged),
     ];
     // モチベーション・ナッジ（行動科学の実証手法）: 状況に応じた最重要ひとこと
-    const streak = streakInfo(merged);
-    const totalMat = courses.reduce((a, c) => a + c.total, 0);
-    const passedMat = courses.reduce((a, c) => a + c.passed, 0);
     const todayAmt = data.daily_amount[data.daily_amount.length - 1]?.amount ?? 0;
     const nudges = motivationNudges({
-      today: zenToday(), todayAmount: todayAmt, series: merged, streak,
-      totalMaterials: totalMat, passedMaterials: passedMat, courses, hour,
+      today: zenToday(), todayAmount: todayAmt, series: merged, streak: streak0,
+      totalMaterials: totalMat0, passedMaterials: passedMat0, courses, hour,
+      nearChapter: getNearDoneChapters()[0] ?? null,
     });
 
     pane.textContent = '';
@@ -508,18 +553,9 @@ async function renderAnalysisTab(
     for (const sec of sections) pane.appendChild(renderInsightSection(sec));
 
     // 実績バッジ（実データに基づく達成のみ・初達成日を記録）
-    const achInput: AchInput = {
-      longestStreak: streak.longest,
-      studiedDays: merged.filter((p) => p.amount > 0).length,
-      passedMaterials: passedMat,
-      totalMaterials: totalMat,
-      completedCourses: courses.filter((c) => c.total > 0 && c.passed >= c.total).length,
-      totalCourses: courses.filter((c) => c.total > 0).length,
-    };
-    const unlocked = new Set(computeUnlocked(achInput));
-    void recordAchievements([...unlocked]);
+    void recordAchievements([...unlocked0]);
     const achDates = await getAchievementDates();
-    pane.appendChild(renderAchievements(unlocked, achDates));
+    pane.appendChild(renderAchievements(unlocked0, achDates));
   } catch (e) {
     console.warn('[ZSS] 分析の取得失敗:', e);
     pane.textContent = '';
@@ -856,10 +892,20 @@ function renderPredictorSection(
   dateInput.addEventListener('change', onDate);
   updateRec();
   drawChart(parseTarget(dateInput.value));
+  // 週次計画のカレンダー書き出し（コミットメント・デバイス: 予定に置くと実行率が上がる）
+  const icsBtn = h('button', { class: 'zss-dm-btn', type: 'button', title: '目標日までの週次マイルストーンを .ics で書き出し（Google/Appleカレンダーに取込可）' }, ['週次計画をカレンダーへ (.ics)']);
+  icsBtn.addEventListener('click', () => {
+    const v = dateInput.value;
+    const target = v ? new Date(v + 'T23:59:59+09:00') : null;
+    if (!target || isNaN(target.getTime()) || target.getTime() < today0.getTime() || pred.remaining <= 0) return;
+    downloadText(`zen-study-plan-${v}.ics`, 'text/calendar', buildPlanIcs({ remaining: pred.remaining, passed: pred.passed, target, today: today0 }));
+  });
+
   const targetBox = h('div', { class: 'zss-target-box' }, [
     h('div', { class: 'zss-target-head' }, ['目標日から逆算']),
     h('div', { class: 'zss-target' }, [h('span', {}, ['完了させたい日:']), dateInput]),
     recOut,
+    h('div', { class: 'zss-dm-row', style: 'margin-top:6px' }, [icsBtn]),
   ]);
 
   // 一日の教材数から逆算（義務ペース以上のみ設定可能）。入力した1日ペースでの完了見込み日を出す。

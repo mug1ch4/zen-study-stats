@@ -150,7 +150,7 @@ async function settleCompletion(attempt: number): Promise<void> {
     const prev = await getLastPassed();
     if (prev === null) {
       await setLastPassed(mt.passed); // 初回は基準値のみ（過去分を誤カウントしない）
-      if (DEV_NOTIFY) showToast(`ℹ️ [dev] 基準値を設定: passed=${mt.passed}（初回は計上なし）`, { icon: 'ℹ️', durationMs: 9000 });
+      if (DEV_NOTIFY) showToast(`ℹ️ [dev] 基準値を設定: passed=${mt.passed}（初回は計上なし）`, { icon: 'ℹ️', durationMs: 9000, log: false });
       return;
     }
     const delta = mt.passed - prev;
@@ -158,11 +158,11 @@ async function settleCompletion(attempt: number): Promise<void> {
       // まだ集計に反映されていない可能性 → 少し待って再確認（最大3回）。
       if (attempt < 3) {
         window.setTimeout(() => void settleCompletion(attempt + 1), 3500);
-        if (DEV_NOTIFY) showToast(`⏳ [dev] passed 未反映（${mt.passed}）→ 再確認 ${attempt + 1}/3`, { icon: '⏳', accent: '#d9822b', durationMs: 6000 });
+        if (DEV_NOTIFY) showToast(`⏳ [dev] passed 未反映（${mt.passed}）→ 再確認 ${attempt + 1}/3`, { icon: '⏳', accent: '#d9822b', durationMs: 6000, log: false });
         return;
       }
       // リトライ尽きても不変＝不合格/再提出/既計上 → 何もしない（下流は"確定分"だけ）
-      if (DEV_NOTIFY) showToast(`⚠️ [dev] passed 不変のまま（${mt.passed}）＝不合格/既計上`, { icon: '⚠️', accent: '#d9822b', durationMs: 9000 });
+      if (DEV_NOTIFY) showToast(`⚠️ [dev] passed 不変のまま（${mt.passed}）＝不合格/既計上`, { icon: '⚠️', accent: '#d9822b', durationMs: 9000, log: false });
       return;
     }
     await setLastPassed(mt.passed);
@@ -175,9 +175,9 @@ async function settleCompletion(attempt: number): Promise<void> {
     window.dispatchEvent(new Event('zss:completion')); // 予測/教科タブ（今日の目標）をライブ再描画
     await notifyProgress(mt.passed, mt.total); // 節目トースト
     refreshSummary(); // コース/章バナーの残りを最新化
-    if (DEV_NOTIFY) showToast(`✅ [dev] 確定: passed ${prev}→${mt.passed}（+${delta}）を記録`, { icon: '✅', accent: '#1a8a4a', durationMs: 9000 });
+    if (DEV_NOTIFY) showToast(`✅ [dev] 確定: passed ${prev}→${mt.passed}（+${delta}）を記録`, { icon: '✅', accent: '#1a8a4a', durationMs: 9000, log: false });
   } catch (e) {
-    if (DEV_NOTIFY) showToast(`❌ [dev] 集計失敗: ${String(e).slice(0, 60)}`, { icon: '❌', accent: '#d9822b', durationMs: 9000 });
+    if (DEV_NOTIFY) showToast(`❌ [dev] 集計失敗: ${String(e).slice(0, 60)}`, { icon: '❌', accent: '#d9822b', durationMs: 9000, log: false });
   }
 }
 function onCompletion(): void {
@@ -190,11 +190,11 @@ function listenCompletions(): void {
     const d = e.data as { __zss?: string; courseId?: string; chapterId?: string } | null;
     if (!d || typeof d !== 'object') return;
     if (d.__zss === 'observer-ready') {
-      if (DEV_NOTIFY) showToast('🟢 [dev] observer 稼働中（完了検知の準備OK）', { icon: '🟢', durationMs: 8000 });
+      if (DEV_NOTIFY) showToast('🟢 [dev] observer 稼働中（完了検知の準備OK）', { icon: '🟢', durationMs: 8000, log: false });
       return;
     }
     if (d.__zss === 'completion') {
-      if (DEV_NOTIFY) showToast(`🔎 [dev] 完了通信を検知: course ${d.courseId} / ch ${d.chapterId}`, { icon: '🔎', durationMs: 9000 });
+      if (DEV_NOTIFY) showToast(`🔎 [dev] 完了通信を検知: course ${d.courseId} / ch ${d.chapterId}`, { icon: '🔎', durationMs: 9000, log: false });
       const dd = d as { courseId?: string; chapterId?: string; resource?: string; resourceId?: string };
       if (dd.courseId && dd.chapterId && dd.resource && dd.resourceId) {
         pendingEv = { courseId: +dd.courseId, chapterId: +dd.chapterId, resource: dd.resource, resourceId: +dd.resourceId, ts: Date.now() };
@@ -235,6 +235,13 @@ function startup(): void {
     try {
       const mt = await fetchMaterialTotals(); // 教材消化（コツコツ視聴を反映する主指標）
       await snapshotMaterials(mt.passed, mt.total);
+      // おかえりトースト（Endowed Progress）: 前回の既知値から進んでいたら honest に伝える
+      // （別端末や前日の続きで積んだ分）。基準も最新化＝完了検知の初回差分を正確に保つ。
+      const prevKnown = await getLastPassed();
+      if (prevKnown !== null && mt.passed > prevKnown) {
+        showToast(`おかえりなさい。前回の記録から +${mt.passed - prevKnown} 教材進んでいます。`, { accent: '#1a8a4a' });
+        await setLastPassed(mt.passed);
+      }
       await ensureDayStart(mt.passed); // 新しい学習日の始点passedを記録（デイリー目標の当日完了数算出用）
       // 週の始点。週が切り替わったら「先週のまとめ」を1回だけ通知（Fresh Start）
       const ws = await ensureWeekStart(mt.passed);

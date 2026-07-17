@@ -23,6 +23,8 @@ export interface MotivationCtx {
   passedMaterials: number;
   courses: { title: string; total: number; passed: number }[];
   hour: { study: number[] };
+  /** やりかけの章（あと少しで章完了）。Zeigarnik効果: 未完のタスクは頭に残る→片付ける快感を提示。 */
+  nearChapter?: { courseTitle: string; chapterTitle: string; remaining: number } | null;
 }
 
 function bestWeekday(series: { date: string; amount: number }[]): number | null {
@@ -82,7 +84,13 @@ export function motivationNudges(ctx: MotivationCtx): Nudge[] {
     out.push({ kind: 'landmark', text: `新しい週の始まり。今週の"やる量"を決めると弾みがつきます（週初めは続けやすい時期です）。` });
   }
 
-  // 3) Goal-Gradient: 完了間近のコース（近い小目標を提示）
+  // 3) Zeigarnik: やりかけの章（未完のタスクは頭に残る→最も近い完了を提示）
+  if (ctx.nearChapter) {
+    const nc = ctx.nearChapter;
+    out.push({ kind: 'goal', text: `「${nc.courseTitle}」の${nc.chapterTitle}は あと${nc.remaining}教材で章完了。やりかけを片付けると勢いがつきます。` });
+  }
+
+  // 3') Goal-Gradient: 完了間近のコース（近い小目標を提示）
   const near = ctx.courses
     .map((c) => ({ title: c.title, rem: Math.max(0, c.total - c.passed) }))
     .filter((c) => c.rem > 0 && c.rem <= 5)
