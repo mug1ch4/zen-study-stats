@@ -667,7 +667,7 @@ function renderPredictorSection(
       legendLine(pred.onTrack ? 'var(--success)' : '#d9822b', '予測(帯=P15〜85)'),
       legendItem('var(--primary)', '実績'),
       ...(pred.montecarlo ? [legendLine('#e5484d', '完了見込み'), legendItem('#6f5cc4', '完了分布')] : []),
-      ...(target ? [legendLine(TARGET_COL, '目標ペース(選択日)')] : []),
+      ...(target ? [legendLine(TARGET_COL, '目標ペース')] : []),
     ];
     for (const it of items) legendHost.appendChild(it);
   };
@@ -731,6 +731,47 @@ function renderPredictorSection(
     recOut,
   ]);
 
+  // 一日の教材数から逆算（義務ペース以上のみ設定可能）。入力した1日ペースでの完了見込み日を出す。
+  const DAY = 86400000;
+  const daysToDeadline = Math.max(1, Math.ceil((pred.finalDeadline.getTime() - today0.getTime()) / DAY));
+  const requiredPerDay = pred.remaining > 0 ? Math.max(1, Math.ceil(pred.remaining / daysToDeadline)) : 0;
+  const paceInput = h('input', { type: 'number', class: 'zss-target-pace', min: requiredPerDay, step: 1, inputmode: 'numeric' }) as HTMLInputElement;
+  paceInput.value = String(Math.max(requiredPerDay, 1));
+  const paceOut = h('div', { class: 'zss-rec' }, []);
+  const updatePace = (): Date | null => {
+    paceOut.textContent = '';
+    if (pred.remaining <= 0) { paceOut.append(recMsg('good', '全教材を消化済みです')); return null; }
+    const n = Math.floor(Number(paceInput.value));
+    if (!Number.isFinite(n) || n <= 0) { paceOut.append(recMsg('note', '1日の教材数を入力してください')); return null; }
+    if (n < requiredPerDay) {
+      paceOut.append(recMsg('warn', `義務ペース（${requiredPerDay} 教材/日）以上を入力してください。これ未満だと締切（${md(pred.finalDeadline)}）に間に合いません。`));
+      return null;
+    }
+    const days = Math.ceil(pred.remaining / n);
+    const finish = new Date(today0.getTime() + days * DAY);
+    const early = Math.round((pred.finalDeadline.getTime() - finish.getTime()) / DAY);
+    paceOut.append(
+      h('div', { class: 'zss-rec-main' }, [
+        `1日 ${n} 教材 なら ${md(finish)} に完了見込み`,
+        h('span', { class: 'sub' }, [`（残り${pred.remaining}教材 / 約${days}日）`]),
+      ]),
+      h('div', { class: 'zss-rec-sub' }, [early > 0 ? `締切より ${early}日早く終わります。` : '締切ちょうど（義務ペース）です。']),
+    );
+    return finish;
+  };
+  const onPace = (): void => { drawChart(updatePace()); };
+  paceInput.addEventListener('input', onPace);
+  paceInput.addEventListener('change', onPace);
+  updatePace(); // 初期はテキストのみ更新（線は目標日プランナーの初期表示を優先）
+  const paceBox = h('div', { class: 'zss-target-box' }, [
+    h('div', { class: 'zss-target-head' }, ['一日の教材数から逆算']),
+    h('div', { class: 'zss-target' }, [
+      h('span', {}, ['1日の教材数:']), paceInput,
+      h('span', { class: 'zss-pace-min' }, [`義務 ${requiredPerDay} 教材/日 以上`]),
+    ]),
+    paceOut,
+  ]);
+
   const analysisEl = renderAnalysis(pred);
   const quest = renderDailyQuest(pred, todayAmount);
   // 実績・完了見込みグラフ（今日の目標の直下に配置）
@@ -759,6 +800,7 @@ function renderPredictorSection(
     nums,
     ...(analysisEl ? [analysisEl] : []),
     targetBox,
+    paceBox,
     h('div', { class: 'zss-pred-caveat' }, [opts.electivesNote]),
     ...(pred.montecarlo
       ? [

@@ -160,6 +160,8 @@ export const CSS = `
 .zss-pred-methods .mv { font-variant-numeric: tabular-nums; }
 .zss-target { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 4px 0; }
 .zss-target input { font: inherit; padding: 3px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--ink); }
+.zss-target-pace { width: 5em; }
+.zss-pace-min { font-size: 11px; color: var(--muted); }
 .zss-rec { margin-top: 6px; }
 .zss-rec-main { font-size: 13px; font-weight: 700; }
 .zss-rec-main .sub { font-size: 11px; font-weight: 400; color: var(--muted); }
