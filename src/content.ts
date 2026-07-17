@@ -3,7 +3,7 @@
 import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } from './api';
 import { fetchMaterialTotals } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
-import { initDarkMode, initDarkModeFrame, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
+import { initDarkMode, initDarkModeFrame, preInitDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
 import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart } from './history';
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
@@ -214,6 +214,8 @@ function startup(): void {
 }
 
 function main(): void {
+  // document_start 同期: 保存済みダークなら初回ペイント前に基礎ダークを適用（ページ読込の白フラッシュ防止）
+  preInitDarkMode();
   if (window.top !== window.self) {
     // サブフレーム（教材の iframe = www.nnn.ed.nico/contents/… 等）: ダークモードだけ適用。
     // カード/サイドパネル/残りサマリ/完了検知の購読は top フレームのみで行う。

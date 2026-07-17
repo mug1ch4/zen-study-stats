@@ -2,15 +2,19 @@
 // 白いサーフェスを暗色へ、暗い文字を明色へ動的リマップ。ブランド青は維持。
 // 【第一原則】これは自ブラウザの描画変更のみ。GETすら発生しない純CSS/DOM。
 import { HOST_ID } from './inject';
+import { prefersReducedMotion } from './anim';
 
 const STYLE_ID = 'zss-dark-style';
 const TOGGLE_ID = 'zss-dark-toggle';
 const HTML_CLASS = 'zss-dark';
 const STORAGE_KEY = 'zss:darkMode';
+// chrome.storage は非同期のため、初回ペイント前(document_start)にダーク可否を知る手段として
+// localStorage に同期ミラーを持つ（同一オリジンなので教材iframeからも同じ値が読める）。
+const MIRROR_KEY = 'zss:darkMirror';
 
 // タグ用クラス（ov = 大きな背景画像=プロフィールバナー。暗幕オーバーレイで文字は暗くしない。
 // hatch = ::after のロック用ハッチ(fill_disabled_stripe)を持つ行。反転して暗くする）
-const C = { s1: 'zss-s1', s2: 'zss-s2', ink: 'zss-ink', muted: 'zss-muted', ov: 'zss-ov', hatch: 'zss-hatch', dim: 'zss-dim' };
+const C = { s1: 'zss-s1', s2: 'zss-s2', ink: 'zss-ink', muted: 'zss-muted', ov: 'zss-ov', hatch: 'zss-hatch', dim: 'zss-dim', inv: 'zss-inv' };
 
 // 手作りダーク・トークン
 const T = {
@@ -47,7 +51,19 @@ html.${HTML_CLASS} .${C.s1} { background-color: ${T.S1} !important; }
 html.${HTML_CLASS} .${C.s2} { background-color: ${T.S2} !important; }
 html.${HTML_CLASS} .${C.ink} { color: ${T.INK} !important; }
 html.${HTML_CLASS} .${C.muted} { color: ${T.MUTED} !important; }
-html.${HTML_CLASS} *:not(#${HOST_ID}):not(#${HOST_ID} *):not(#${TOGGLE_ID}):not(#${TOGGLE_ID} *) { border-color: ${T.BORDER} !important; }
+html.${HTML_CLASS} *:not(#${HOST_ID}):not(#${HOST_ID} *):not(#${TOGGLE_ID}):not(#${TOGGLE_ID} *):not(.katex):not(.katex *):not(mjx-container):not(mjx-container *):not(.MathJax):not(.MathJax *):not(math):not(math *) { border-color: ${T.BORDER} !important; }
+
+/* 数式(KaTeX/MathJax/MathML)。分数線・根号・罫線は border/currentColor で描かれるため、
+   上の境界色一括上書きから除外した上で、文字色を ink に固定し border は currentColor へ。
+   静的CSSなので遅延レンダリング（数式が後から描画）でもタグ付け不要で安定し、
+   「分数線が見えない」「読み込み途中でテーマを切り替えると薄く描画される」を防ぐ。 */
+html.${HTML_CLASS} .katex, html.${HTML_CLASS} .katex *,
+html.${HTML_CLASS} mjx-container, html.${HTML_CLASS} mjx-container *,
+html.${HTML_CLASS} .MathJax, html.${HTML_CLASS} .MathJax *,
+html.${HTML_CLASS} math, html.${HTML_CLASS} math * {
+  color: ${T.INK} !important;
+  border-color: currentColor !important;
+}
 html.${HTML_CLASS} input, html.${HTML_CLASS} textarea, html.${HTML_CLASS} select { background-color: ${T.S2} !important; color: ${T.INK} !important; }
 
 /* ホバー/フォーカスで本家が明るい背景に戻し、明色テキストと低コントラストになる問題への対処。
@@ -77,6 +93,11 @@ html.${HTML_CLASS} .${C.hatch}::after { filter: invert(1) hue-rotate(180deg) bri
 /* 教材スライド等の大きな画像はライト固定（ダーク版が無い）。darken せず、白を平均して
    ダーク側へ寄せるよう控えめに減光（＝眩しい白を抑えて背景に馴染ませる）。内容は隠さない。 */
 html.${HTML_CLASS} .${C.dim} { filter: brightness(0.85) contrast(0.93) saturate(0.96) !important; }
+
+/* レポート/テストの数式教材画像（白背景＋黒の組版）: 減光では細い分数線が沈むため、
+   ピクセル判定で「ほぼ白背景の組版画像」だけソフト反転（白→暗・黒字→明・色相は復元）。
+   写真など色物はピクセル判定で除外され .zss-dim のまま。.zss-dim より後に置き優先させる */
+html.${HTML_CLASS} img.${C.inv} { filter: invert(0.92) hue-rotate(180deg) !important; }
 `;
   return st;
 }
@@ -89,6 +110,49 @@ html.${HTML_CLASS} .${C.dim} { filter: brightness(0.85) contrast(0.93) saturate(
 //      再スキャン(遷移時3回)や、自分の classList.add が発火させる attribute 通知がほぼ無料になる。
 let sigCache = new WeakMap<Element, string>();
 const sigOf = (el: Element): string => (el.getAttribute('class') ?? '') + '|' + (el.getAttribute('style') ?? '');
+
+// ---- 数式教材画像の分類（レポート/テスト画面のみ） ----
+// 白背景＋黒組版の画像は反転(inv)が最適だが、写真を反転するとネガになるため
+// ピクセルをサンプリングして判定する。結果はURLごとにキャッシュ。
+// 画像はページが既に取得済み（ブラウザキャッシュ命中・GETのみ）なので追加コストは僅少。
+const MATHY_FRAME = /(evaluation|essay)_(report|test)/.test(location.pathname);
+const imgKind = new Map<string, 'inv' | 'dim'>();
+const imgPending = new Set<string>();
+
+function classifyMaterialImage(el: HTMLImageElement): void {
+  const url = el.currentSrc || el.src;
+  if (!url || imgPending.has(url) || imgKind.has(url)) return;
+  imgPending.add(url);
+  void (async () => {
+    try {
+      const r = await fetch(url, { method: 'GET' }); // キャッシュ命中前提の再取得（read-only）
+      const bmp = await createImageBitmap(await r.blob());
+      const w = 48, h = 48;
+      const cv = new OffscreenCanvas(w, h);
+      const g = cv.getContext('2d')!;
+      g.drawImage(bmp, 0, 0, w, h);
+      const d = g.getImageData(0, 0, w, h).data;
+      let light = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        n++;
+        const a = d[i + 3];
+        const lum = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        if (a < 10 || lum > 230) light++; // 透過も「白背景」扱い（反転で暗テーマに馴染む）
+      }
+      imgKind.set(url, light / n >= 0.8 ? 'inv' : 'dim');
+    } catch {
+      imgKind.set(url, 'dim'); // 取得/デコード不可 → 安全側（減光のまま）
+    } finally {
+      imgPending.delete(url);
+      const kind = imgKind.get(url);
+      if (kind === 'inv' && enabled && el.isConnected) {
+        el.classList.remove(C.dim);
+        el.classList.add(C.inv);
+        sigCache.set(el, sigOf(el)); // 自分の変更で再スキャンが走らないよう記録
+      }
+    }
+  })();
+}
 
 /** 読みフェーズ: 付けるべきタグ class を計算（DOM への書き込みは一切しない）。 */
 function planElement(el: Element): string[] {
@@ -119,10 +183,14 @@ function planElement(el: Element): string[] {
   }
 
   // 大きな画像（教材スライド等・ライト固定でダーク版が無い）は減光して眩しい白を抑える。
+  // レポート/テスト画面では白背景の組版画像（数式等）をソフト反転（分類済みなら inv）。
   // svgロゴは別ルールで反転するので除外。
   if (el.tagName === 'IMG' && he.offsetWidth >= 160 && he.offsetHeight >= 120) {
-    const src = (el as HTMLImageElement).src || '';
-    if (!src.includes('.svg')) add.push(C.dim);
+    const img = el as HTMLImageElement;
+    if (!(img.src || '').includes('.svg')) {
+      const kind = MATHY_FRAME ? imgKind.get(img.currentSrc || img.src) : undefined;
+      add.push(kind === 'inv' ? C.inv : C.dim);
+    }
   }
 
   // 行サイズの要素だけ ::after のロック用ハッチ(明るい斜線)を検査（perf配慮で行に限定）。
@@ -153,6 +221,7 @@ function scan(root: ParentNode): void {
   for (const [el, add] of plans) {
     if (add.length) el.classList.add(...add);
     sigCache.set(el, sigOf(el));
+    if (MATHY_FRAME && add.includes(C.dim) && el.tagName === 'IMG') classifyMaterialImage(el as HTMLImageElement);
   }
 }
 
@@ -162,6 +231,7 @@ function scanOne(el: Element): void {
   const add = planElement(el);
   if (add.length) el.classList.add(...add);
   sigCache.set(el, sigOf(el));
+  if (MATHY_FRAME && add.includes(C.dim) && el.tagName === 'IMG') classifyMaterialImage(el as HTMLImageElement);
 }
 
 // ---- 我々のカードのテーマ同期 ----
@@ -232,7 +302,7 @@ function makeNavButton(template: HTMLElement): HTMLElement {
   if (i) i.replaceWith(icon);
   const span = btn.querySelector('span'); if (span) span.textContent = 'テーマ';
   btn.dataset.zssState = enabled ? 'd' : 'l';
-  btn.addEventListener('click', (e) => { e.preventDefault(); void setEnabled(!enabled); });
+  btn.addEventListener('click', (e) => { e.preventDefault(); animateNextChange(); void setEnabled(!enabled); });
   return btn;
 }
 
@@ -245,7 +315,7 @@ function ensureFloating(): void {
   st.textContent = `.fab{position:fixed;right:16px;bottom:16px;z-index:2147483646;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:19px;border:1px solid rgba(0,0,0,.1);cursor:pointer;background:#fff;color:#333;box-shadow:0 3px 14px rgba(0,0,0,.22);font:600 12px/1 system-ui,sans-serif}.fab.on{background:#2a2f37;color:#f2f2f2}.fab .em{font-size:15px}`;
   const btn = document.createElement('button'); btn.className = 'fab'; btn.type = 'button';
   btn.setAttribute('aria-label', 'ライト/ダーク切替');
-  btn.addEventListener('click', () => void setEnabled(!enabled));
+  btn.addEventListener('click', () => { animateNextChange(); void setEnabled(!enabled); });
   root.append(st, btn);
   (document.body ?? document.documentElement).appendChild(host);
   updateToggleIcon();
@@ -291,10 +361,35 @@ function updateToggleIcon(): void {
   }
 }
 
+// ---- テーマ切替のフェード ----
+// 切替の瞬間だけ全要素に background/color/border/filter の transition を付与し、
+// グラデーション的に遷移させる（切替後に自動除去・reduced-motion では無効）。
+const ANIM_ID = 'zss-theme-anim';
+let animTimer = 0;
+function animateNextChange(): void {
+  if (prefersReducedMotion()) return;
+  let st = document.getElementById(ANIM_ID) as HTMLStyleElement | null;
+  if (!st) {
+    st = document.createElement('style');
+    st.id = ANIM_ID;
+    st.textContent = `html, html *, html *::before, html *::after {
+  transition: background-color .35s ease, color .35s ease, border-color .35s ease, filter .35s ease !important;
+}`;
+    document.documentElement.appendChild(st);
+  }
+  window.clearTimeout(animTimer);
+  animTimer = window.setTimeout(() => document.getElementById(ANIM_ID)?.remove(), 550);
+}
+
 // ---- 有効/無効 ----
 // persist=false はサブフレーム用（storage への書き戻しをしない＝onChanged ループ防止）。
 export async function setEnabled(on: boolean, persist = true): Promise<void> {
   enabled = on;
+  try {
+    localStorage.setItem(MIRROR_KEY, on ? '1' : '0'); // 次回ロードのペイント前適用用（同期ミラー）
+  } catch {
+    /* ignore */
+  }
   const html = document.documentElement;
   if (on) {
     if (!document.getElementById(STYLE_ID)) html.appendChild(styleEl());
@@ -332,16 +427,34 @@ export async function initDarkModeFrame(): Promise<void> {
   try {
     const r = await chrome.storage?.local.get(STORAGE_KEY);
     if (r?.[STORAGE_KEY]) applyWhenReady(true);
+    else if (document.documentElement.classList.contains(HTML_CLASS)) applyWhenReady(false); // preInit不整合の解除
   } catch {
     /* ignore */
   }
   try {
     chrome.storage?.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes[STORAGE_KEY]) applyWhenReady(!!changes[STORAGE_KEY].newValue);
+      if (area === 'local' && changes[STORAGE_KEY]) {
+        animateNextChange(); // topフレームのトグルに合わせて iframe 側もフェード切替
+        applyWhenReady(!!changes[STORAGE_KEY].newValue);
+      }
     });
   } catch {
     /* ignore */
   }
+}
+
+/** document_start で同期実行: 保存済みダークなら「初回ペイント前」に基礎ダークを適用。
+ *  chrome.storage(非同期)を待つ間に本家の白が描画される＝ページ読み込み時の白フラッシュを断つ。
+ *  正式な状態は後続の initDarkMode / initDarkModeFrame（chrome.storage が真実）で確定する。 */
+export function preInitDarkMode(): void {
+  try {
+    if (localStorage.getItem(MIRROR_KEY) !== '1') return;
+  } catch {
+    return;
+  }
+  const html = document.documentElement;
+  html.classList.add(HTML_CLASS);
+  if (!document.getElementById(STYLE_ID)) html.appendChild(styleEl());
 }
 
 // ---- 動的追従（有効時のみ） ----
@@ -452,7 +565,11 @@ export async function initDarkMode(): Promise<void> {
     /* ignore */
   }
   if (saved) await setEnabled(true);
-  else updateToggleIcon();
+  else if (document.documentElement.classList.contains(HTML_CLASS)) {
+    await setEnabled(false, false); // ミラーとの不整合（storageが真実）→ preInit の暫定ダークを解除
+  } else {
+    updateToggleIcon();
+  }
 }
 
 export const isDark = () => enabled;
