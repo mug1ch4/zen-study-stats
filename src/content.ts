@@ -101,19 +101,19 @@ function observeDom(): void {
 }
 
 // 時間帯の傾向: サイト全体で学習中に定期サンプリング（study は講座/動画ページで行うため）。
-// メモリゲートで fetch を抑制し、実記録は history 側の20分ストレージゲートで冪等。
+// 二重ゲート: (1)メモリ5分ゲートで storage 読みの頻度を抑制、(2)recordVisit 内の
+// ストレージ20分ゲートを「fetch前」に判定 → 連続リロードでも learning_amounts 取得は
+// 最大20分に1回。/setting では既取得の cache を再利用し重複取得も避ける。
 let lastVisitAttempt = 0;
 async function maybeRecordVisit(): Promise<void> {
   const now = Date.now();
-  if (now - lastVisitAttempt < 20 * 60 * 1000) return;
+  if (now - lastVisitAttempt < 5 * 60 * 1000) return; // storage読み過多を防ぐ粗いメモリゲート
   lastVisitAttempt = now;
-  try {
-    const la = await fetchLearningAmounts(); // 当日学習数の最新値（増分を時間帯に帰属するため都度取得）
+  await recordVisit(now, async () => {
+    const la = cache ?? (await fetchLearningAmounts());
     const today = la.daily_amount[la.daily_amount.length - 1];
-    await recordVisit(now, today?.amount ?? 0);
-  } catch {
-    /* ignore */
-  }
+    return today?.amount ?? 0;
+  });
 }
 
 function onRouteChange(): void {

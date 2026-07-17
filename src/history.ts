@@ -164,13 +164,15 @@ const zeros24 = () => new Array(24).fill(0) as number[];
 function jstHour(nowMs: number): number {
   return new Date(nowMs + 9 * 3600 * 1000).getUTCHours();
 }
-/** 訪問を記録（20分以内の連続呼び出しはSPA再描画とみなしスキップ）。 */
-export async function recordVisit(nowMs: number, todayAmount: number): Promise<void> {
+/** 訪問を記録。ストレージ永続の20分ゲートを「取得前」に判定し、過剰なリクエストを防ぐ。
+ *  todayAmount は遅延取得（getAmount）にし、ゲート通過時のみ fetch する（連続リロードでも取得は最大20分に1回）。 */
+export async function recordVisit(nowMs: number, getAmount: () => Promise<number>): Promise<void> {
   if (memOverride) return;
   try {
     const r = await chrome.storage.local.get([KEY_HOUR]);
     const s = (r?.[KEY_HOUR] as HourStore) ?? { study: zeros24(), visit: zeros24(), lastDay: '', lastAmount: 0, lastTs: 0 };
-    if (nowMs - (s.lastTs ?? 0) < 20 * 60 * 1000) return; // 直近20分は同一訪問扱い
+    if (nowMs - (s.lastTs ?? 0) < 20 * 60 * 1000) return; // 直近20分は同一訪問扱い（fetchもしない）
+    const todayAmount = await getAmount(); // ゲート通過時のみ当日学習数を取得
     const h = jstHour(nowMs);
     const day = zenTodayISO(nowMs);
     s.visit[h] = (s.visit[h] ?? 0) + 1;
