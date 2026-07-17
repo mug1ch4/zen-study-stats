@@ -149,10 +149,28 @@ export const CSS = `
 .zss-pred-methods .mv { font-variant-numeric: tabular-nums; }
 .zss-target { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 4px 0; }
 .zss-target input { font: inherit; padding: 3px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--ink); }
-.zss-rec { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; margin-top: 4px; }
+.zss-rec { margin-top: 6px; }
 .zss-rec-main { font-size: 13px; font-weight: 700; }
 .zss-rec-main .sub { font-size: 11px; font-weight: 400; color: var(--muted); }
 .zss-rec-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.zss-rec-msg { font-size: 12px; }
+.zss-rec-msg.warn { color: #d9822b; }
+.zss-rec-msg.good { color: var(--success); }
+.zss-rec-msg.note { color: var(--muted); }
+
+/* 目標日から逆算（優先度の高い枠として目立たせる） */
+.zss-target-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 10px 0; background: var(--surface-2); }
+.zss-target-head { font-size: 12px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+
+.zss-pred-caveat { font-size: 10px; color: var(--faint); margin-top: 10px; line-height: 1.5; }
+
+/* 現在ペースからの分析 */
+.zss-analysis { display: flex; flex-direction: column; gap: 3px; margin: 8px 0 2px; }
+.zss-analysis-line { font-size: 12px; color: var(--ink); }
+.zss-analysis-line .ic { display: inline-block; width: 1.1em; font-size: 10px; text-align: center; }
+.zss-analysis-line.good { color: var(--success); }
+.zss-analysis-line.warn { color: #d9822b; }
+.zss-analysis-line.note { color: var(--muted); }
 
 /* --- 詳細タブ --- */
 .zss-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin: 12px 0 10px; }

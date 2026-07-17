@@ -85,6 +85,11 @@ export interface Prediction {
   montecarlo: MonteCarloResult | null; // モンテカルロ（確率・パーセンタイル帯）
   pOnTime: number | null; // 締切に間に合う確率
   confidence: { level: 'low' | 'medium' | 'high'; days: number }; // 予測の確度（データ成熟度）
+  analysis: {
+    tomorrowEstimate: number | null; // 明日の推定消化数（曜日重み×現在ペース）
+    trend: 'up' | 'down' | 'flat' | null; // 直近のペース傾向
+    trendPct: number | null; // 直近半分 vs 前半分の変化率(%)
+  };
 }
 
 function daysBetween(a: Date, b: Date): number {
@@ -206,6 +211,33 @@ export function computePrediction(input: PredInput): Prediction {
   const level: Prediction['confidence']['level'] =
     sampleDays >= 14 && relSE < 0.22 ? 'high' : sampleDays >= 6 ? 'medium' : 'low';
 
+  // 分析: 明日の推定消化 & 直近のペーストレンド
+  const curPerDay = currentPerWeek !== null ? currentPerWeek / 7 : null;
+  let tomorrowEstimate: number | null = null;
+  if (curPerDay !== null && remaining > 0) {
+    const tmr = new Date(today.getTime() + DAY);
+    const w = isHoliday(isoLocal(tmr)) ? weights[0] : weights[tmr.getDay()];
+    tomorrowEstimate = Math.max(0, Math.round(curPerDay * w));
+  }
+  let trend: Prediction['analysis']['trend'] = null;
+  let trendPct: number | null = null;
+  const ds = input.dailySamples ?? [];
+  if (ds.length >= 6) {
+    const half = Math.floor(ds.length / 2);
+    const earlier = ds.slice(0, half).map((x) => x.value);
+    const recent = ds.slice(ds.length - half).map((x) => x.value);
+    const em = earlier.reduce((a, b) => a + b, 0) / earlier.length;
+    const rm = recent.reduce((a, b) => a + b, 0) / recent.length;
+    if (em > 1e-6) {
+      trendPct = Math.round((rm / em - 1) * 100);
+      trend = rm >= em * 1.15 ? 'up' : rm <= em * 0.85 ? 'down' : 'flat';
+    } else if (rm > 1e-6) {
+      trend = 'up';
+    } else {
+      trend = 'flat';
+    }
+  }
+
   return {
     total, passed, remaining, finalDeadline, daysLeft,
     requiredPerWeek, currentPerWeek, paceSource,
@@ -213,6 +245,7 @@ export function computePrediction(input: PredInput): Prediction {
     remainingReports: input.remainingReports, estimates, untouchedSubjects, projectionCurve,
     montecarlo, pOnTime,
     confidence: { level, days: sampleDays },
+    analysis: { tomorrowEstimate, trend, trendPct },
   };
 }
 
@@ -225,9 +258,10 @@ function normalizeWeekdayWeights(raw?: number[]): number[] {
   return raw.map((w) => (avg > 0 ? w / avg : 1));
 }
 
-/** 目標日までに完了させるのに必要な1日/週あたりペース。 */
-export function recommendedPace(remaining: number, target: Date): { perDay: number; perWeek: number; days: number } {
+/** 目標日までに完了させるのに必要な1日/週あたりペース。過去日/当日直前など不正なら null。 */
+export function recommendedPace(remaining: number, target: Date): { perDay: number; perWeek: number; days: number } | null {
   const today = parseDate(todayISO());
-  const days = Math.max(1, daysBetween(today, target));
+  const days = daysBetween(today, target);
+  if (!isFinite(days) || days < 0.5) return null; // 過去・当日・不正な日付
   return { perDay: remaining / days, perWeek: (remaining / days) * 7, days };
 }

@@ -1,11 +1,11 @@
 import type { LearningAmounts } from '../api';
 import { computeKpis, computeWeekdayStats } from '../derive';
-import { weekdayLabel, shortDate } from '../format';
+import { weekdayLabel, shortDate, zenToday } from '../format';
 import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
-import { getSeries, getMaterialHistory } from '../history';
+import { getSeries, getMaterialHistory, getTargetDate, setTargetDate } from '../history';
 import { fetchReportProgresses } from '../api';
 import { fetchCourseMaterials } from '../courseApi';
 import { calendarData, trendPoints, streakInfo, type TrendMode } from '../deriveHistory';
@@ -267,8 +267,13 @@ async function renderPredictTab(
       actualCurve.unshift({ date: recent14[i].date, remaining: rem });
       rem += recent14[i].amount ?? 0;
     }
+    const savedTarget = await getTargetDate();
+    const electivesNote =
+      report.takingCourseCount > report.requiredCourseCount
+        ? `※「学習数」（累計・日別）は非必修コースも含みます（履修${report.takingCourseCount} / 必修${report.requiredCourseCount}）。そのぶんペース推定は高めに出ることがあります。必修の進捗は「残教材」で判定しています。`
+        : `※「学習数」（累計・日別）は全コースの合計です。必修の進捗は「残教材」で判定しています。`;
     pane.textContent = '';
-    pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayAmount));
+    pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayAmount, { savedTarget, electivesNote }));
   } catch (e) {
     console.warn('[ZSS] 完了予測の取得失敗:', e);
     pane.textContent = '';
@@ -395,7 +400,13 @@ function renderDailyQuest(pred: Prediction, todayAmount: number): HTMLElement | 
   ]);
 }
 
-function renderPredictorSection(pred: Prediction, actual: { date: string; remaining: number }[], tip: Tooltip, todayAmount: number): HTMLElement {
+function renderPredictorSection(
+  pred: Prediction,
+  actual: { date: string; remaining: number }[],
+  tip: Tooltip,
+  todayAmount: number,
+  opts: { savedTarget: string | null; electivesNote: string }
+): HTMLElement {
   // 見出しの判定（モンテカルロの確率・パーセンタイルを主に）
   let verdict: HTMLElement;
   const mc = pred.montecarlo;
@@ -455,35 +466,73 @@ function renderPredictorSection(pred: Prediction, actual: { date: string; remain
     })
   );
 
-  // 目標日 → 推奨ペース
+  // 目標日 → 推奨ペース（過去日/締切後は不可・例外処理つき）。優先度の高い機能として目立つ枠に。
+  const today0 = zenToday();
   const dateInput = h('input', { type: 'date', class: 'zss-target-date' }) as HTMLInputElement;
-  dateInput.value = isoDate(pred.finalDeadline);
-  dateInput.min = isoDate(new Date());
+  // 記憶した目標日を既定に（今日〜締切の範囲内なら採用、外れていれば締切）
+  const savedValid =
+    opts.savedTarget &&
+    opts.savedTarget >= isoDate(today0) &&
+    opts.savedTarget <= isoDate(pred.finalDeadline);
+  dateInput.value = savedValid ? (opts.savedTarget as string) : isoDate(pred.finalDeadline);
+  dateInput.min = isoDate(today0);
+  dateInput.max = isoDate(pred.finalDeadline);
   const recOut = h('div', { class: 'zss-rec' }, []);
   const updateRec = () => {
-    const v = dateInput.value;
-    if (!v) return;
-    const target = new Date(v + 'T23:59:59+09:00');
-    const rec = recommendedPace(pred.remaining, target);
-    const curPerDay = pred.currentPerWeek !== null ? pred.currentPerWeek / 7 : null;
     recOut.textContent = '';
+    const v = dateInput.value;
+    if (!v) {
+      recOut.append(recMsg('note', '日付を選ぶと必要ペースを表示します'));
+      return;
+    }
+    const target = new Date(v + 'T23:59:59+09:00');
+    if (isNaN(target.getTime())) {
+      recOut.append(recMsg('warn', '日付が正しくありません'));
+      return;
+    }
+    if (target.getTime() < today0.getTime()) {
+      recOut.append(recMsg('warn', '目標日は今日以降を選んでください'));
+      return;
+    }
+    if (target.getTime() > pred.finalDeadline.getTime()) {
+      recOut.append(recMsg('warn', `締切（${md(pred.finalDeadline)}）より後には設定できません`));
+      return;
+    }
+    if (pred.remaining <= 0) {
+      recOut.append(recMsg('good', '全教材を消化済みです 🎉'));
+      return;
+    }
+    const rec = recommendedPace(pred.remaining, target);
+    if (!rec) {
+      recOut.append(recMsg('warn', '目標日は今日以降を選んでください'));
+      return;
+    }
+    void setTargetDate(v); // 有効な目標日を記憶
+    const curPerDay = pred.currentPerWeek !== null ? pred.currentPerWeek / 7 : null;
     recOut.append(
       h('div', { class: 'zss-rec-main' }, [
         `${md(target)} までに終えるには 1日 ${Math.ceil(rec.perDay)} 教材`,
-        h('span', { class: 'sub' }, [`（週 ${Math.round(rec.perWeek)}）`]),
+        h('span', { class: 'sub' }, [`（週 ${Math.round(rec.perWeek)}・残り${Math.round(rec.days)}日）`]),
       ]),
       h('div', { class: 'zss-rec-sub' }, [
         curPerDay === null
-          ? ''
+          ? '現在ペースは数日記録すると表示されます'
           : rec.perDay <= curPerDay
-            ? `現在ペース ${Math.round(curPerDay)}/日 で到達できます ✓`
-            : `現在ペース ${Math.round(curPerDay)}/日 → あと 1日 +${Math.ceil(rec.perDay - curPerDay)} 必要`,
+            ? `現在ペース ${curPerDay.toFixed(1)}/日 で到達できます ✓`
+            : `現在ペース ${curPerDay.toFixed(1)}/日 → あと 1日 +${Math.ceil(rec.perDay - curPerDay)} 必要`,
       ])
     );
   };
   dateInput.addEventListener('input', updateRec);
+  dateInput.addEventListener('change', updateRec);
   updateRec();
+  const targetBox = h('div', { class: 'zss-target-box' }, [
+    h('div', { class: 'zss-target-head' }, ['🎯 目標日から逆算']),
+    h('div', { class: 'zss-target' }, [h('span', {}, ['完了させたい日:']), dateInput]),
+    recOut,
+  ]);
 
+  const analysisEl = renderAnalysis(pred);
   const quest = renderDailyQuest(pred, todayAmount);
   return h('div', { class: 'zss-section' }, [
     ...(quest ? [quest] : []),
@@ -499,6 +548,9 @@ function renderPredictorSection(pred: Prediction, actual: { date: string; remain
         : `直近の学習活動から暫定予測（数日で精度向上）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`,
     ]),
     nums,
+    ...(analysisEl ? [analysisEl] : []),
+    targetBox,
+    h('div', { class: 'zss-pred-caveat' }, [opts.electivesNote]),
     h('div', { class: 'zss-chart' }, [renderBurndown(pred, actual, tip)]),
     h('div', { class: 'zss-cal-legend' }, [
       legendLine('var(--muted)', '必要ライン'),
@@ -520,9 +572,6 @@ function renderPredictorSection(pred: Prediction, actual: { date: string; remain
         ]
       : []),
     h('details', { class: 'zss-fold' }, [h('summary', {}, ['手法別の見立て（他の推定）']), methods]),
-    h('div', { class: 'zss-sub-head' }, ['目標日から逆算']),
-    h('div', { class: 'zss-target' }, [h('span', {}, ['完了させたい日:']), dateInput]),
-    recOut,
   ]);
 }
 
@@ -538,6 +587,33 @@ function confidenceBadge(conf: Prediction['confidence']): HTMLElement {
     h('span', { class: 'zss-conf-label' }, [`予測の${map.label}`]),
     h('span', { class: 'zss-conf-note' }, [`　${map.note}`]),
   ]);
+}
+
+/** 目標枠内の状態メッセージ（不正日付・達成など）。 */
+function recMsg(kind: 'good' | 'warn' | 'note', text: string): HTMLElement {
+  return h('div', { class: 'zss-rec-msg ' + kind }, [text]);
+}
+
+/** 現在ペースからの分析（完了見込み vs 締切・明日の目安・ペース傾向）。 */
+function renderAnalysis(pred: Prediction): HTMLElement | null {
+  if (pred.remaining <= 0) return null;
+  const a = pred.analysis;
+  const rows: HTMLElement[] = [];
+  if (pred.projectedFinish && pred.daysVsDeadline !== null) {
+    const dv = Math.round(pred.daysVsDeadline);
+    if (dv <= -1) rows.push(analysisLine('good', `このペースなら ${md(pred.projectedFinish)} 頃に完了見込み（締切より ${-dv}日早い）`));
+    else if (dv >= 1) rows.push(analysisLine('warn', `このペースだと完了は ${md(pred.projectedFinish)} 頃（締切を ${dv}日超過）`));
+    else rows.push(analysisLine('note', `完了見込みは締切とほぼ同時（${md(pred.projectedFinish)}）`));
+  }
+  if (a.tomorrowEstimate !== null) rows.push(analysisLine('note', `明日の目安: 約 ${a.tomorrowEstimate} 教材（曜日の傾向から）`));
+  if (a.trend === 'down') rows.push(analysisLine('warn', `ペースが落ちています${a.trendPct !== null ? `（直近 ${a.trendPct}%）` : ''}`));
+  else if (a.trend === 'up') rows.push(analysisLine('good', `ペースが上がっています${a.trendPct !== null ? `（+${a.trendPct}%）` : ''}`));
+  if (!rows.length) return null;
+  return h('div', { class: 'zss-analysis' }, rows);
+}
+function analysisLine(kind: 'good' | 'warn' | 'note', text: string): HTMLElement {
+  const ic = kind === 'good' ? '▲' : kind === 'warn' ? '▼' : '·';
+  return h('div', { class: 'zss-analysis-line ' + kind }, [h('span', { class: 'ic' }, [ic]), ' ' + text]);
 }
 
 function paceKeyOf(src: Prediction['paceSource']): string {

@@ -44,6 +44,8 @@ export interface ReportProgress {
   months: MonthlyReport[];
   totalReports: number;
   passedReports: number;
+  requiredCourseCount: number; // 必修コース数
+  takingCourseCount: number; // 履修中コース数（>必修 なら非必修も履修＝学習数に混ざる）
 }
 
 interface RawReportProgress {
@@ -85,5 +87,7 @@ export async function fetchReportProgresses(): Promise<ReportProgress> {
     months,
     totalReports: months.reduce((a, m) => a + m.total, 0),
     passedReports: months.reduce((a, m) => a + m.passed, 0),
+    requiredCourseCount: j.alert?.required_course_count ?? 0,
+    takingCourseCount: j.alert?.taking_course_count ?? 0,
   };
 }

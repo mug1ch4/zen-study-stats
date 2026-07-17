@@ -155,6 +155,26 @@ export async function maybeDailySnapshot(work: () => Promise<void>): Promise<voi
   }
 }
 
+// --- 目標日（「目標日から逆算」の設定値を記憶） ---
+const KEY_TARGET = 'zss:targetDate'; // "YYYY-MM-DD"
+export async function getTargetDate(): Promise<string | null> {
+  if (memOverride) return null;
+  try {
+    const r = await chrome.storage.local.get([KEY_TARGET]);
+    return (r?.[KEY_TARGET] as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+export async function setTargetDate(iso: string): Promise<void> {
+  if (memOverride) return;
+  try {
+    await chrome.storage.local.set({ [KEY_TARGET]: iso });
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 履歴を日付昇順の配列で取得。 */
 export async function getSeries(): Promise<{ date: string; amount: number }[]> {
   const h = await loadRaw();

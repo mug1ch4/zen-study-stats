@@ -32,6 +32,8 @@ __setMockReport({
   ],
   totalReports: 50,
   passedReports: 20,
+  requiredCourseCount: 9,
+  takingCourseCount: 11,
 });
 
 // モックのコースボリューム（教科ティアB＝残/総の確認用）
