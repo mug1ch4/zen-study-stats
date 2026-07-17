@@ -151,6 +151,9 @@ export function renderDataManage(): HTMLElement {
     h('p', { class: 'zss-dm-note' }, [
       '長期の学習履歴（カレンダー・トレンド・予測の土台）はこの端末だけに保存され、アンインストールで消えます。定期的な書き出しを推奨します。復元は既存データと統合します（削除はしません）。',
     ]),
+    h('p', { class: 'zss-dm-note' }, [
+      'JSONバックアップに含むもの: 学習数履歴・完了レポート/教材消化の履歴・時間帯データ・目標完了日など（再構築可能なコース集計キャッシュのみ除外）。CSVは日付×学習数の一覧のみ。',
+    ]),
     h('div', { class: 'zss-dm-row' }, [jsonBtn, csvBtn, importBtn, reloadBtn]),
     fileInput,
     status,

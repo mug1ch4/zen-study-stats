@@ -16,6 +16,7 @@ import { renderTrend } from '../charts/trend';
 import { dataTable } from './dataTable';
 import { renderBurndown } from '../charts/burndown';
 import { renderDonut } from '../charts/donut';
+import { renderHourBars } from '../charts/hourBars';
 import { bayesianAverage } from '../shrinkage';
 import { computeCourseVolumes } from '../courseStats';
 import { renderSubjects } from './volumeTable';
@@ -192,6 +193,15 @@ async function renderRecentTab(
       h('div', { class: 'zss-section-head' }, [h('div', { class: 'zss-section-title' }, ['学習数トレンド']), seg]),
       trendChart,
     ])
+  );
+
+  // 時間帯トレンド（自前計測 hourStats）
+  const hour = await getHourStats();
+  const totalHour = hour.study.reduce((a, b) => a + b, 0);
+  longWrap.appendChild(
+    totalHour > 0
+      ? sectionEl('時間帯トレンド', '学習が進む時間帯（自前計測・使うほど精緻化）', [wrapChart(renderHourBars(hour.study, tip))])
+      : sectionEl('時間帯トレンド', '自前計測', [h('div', { class: 'zss-empty' }, ['ZEN Studyを使うたびに時間帯を記録します（APIに時刻が無いため。数回で傾向が出ます）。'])])
   );
 }
 
