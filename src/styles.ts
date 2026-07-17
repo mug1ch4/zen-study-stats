@@ -164,6 +164,18 @@ export const CSS = `
 .zss-fold > summary::before { content: '▸ '; }
 .zss-fold[open] > summary::before { content: '▾ '; }
 
+/* --- 予測の確度バッジ --- */
+.zss-conf { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 6px 0 2px; flex-wrap: wrap; }
+.zss-conf-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.zss-conf-label { font-weight: 700; }
+.zss-conf-note { color: var(--faint); }
+.zss-conf.low .zss-conf-dot { background: #d9822b; }
+.zss-conf.low .zss-conf-label { color: #d9822b; }
+.zss-conf.mid .zss-conf-dot { background: var(--muted); }
+.zss-conf.mid .zss-conf-label { color: var(--muted); }
+.zss-conf.high .zss-conf-dot { background: var(--success); }
+.zss-conf.high .zss-conf-label { color: var(--success); }
+
 /* --- 今日のデイリークエスト --- */
 .zss-quest {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;

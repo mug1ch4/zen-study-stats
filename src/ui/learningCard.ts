@@ -15,6 +15,7 @@ import { renderTrend } from '../charts/trend';
 import { dataTable } from './dataTable';
 import { renderBurndown } from '../charts/burndown';
 import { renderDonut } from '../charts/donut';
+import { bayesianAverage } from '../shrinkage';
 import { computeCourseVolumes } from '../courseStats';
 import { renderSubjects } from './volumeTable';
 import { renderDataManage } from './dataManage';
@@ -82,7 +83,7 @@ async function populateDetails(container: HTMLElement, tip: Tooltip, data: Learn
   const done = [false, false, false];
   const renderers = [
     () => void renderRecentTab(panes[0], data, getSeriesOnce, tip),
-    () => void renderPredictTab(panes[1], getSeriesOnce, getCourses, tip, todayAmount),
+    () => void renderPredictTab(panes[1], getSeriesOnce, getCourses, tip, todayAmount, data),
     () => void renderSubjectsTab(panes[2], getCourses, tip),
   ];
   const select = (i: number) => {
@@ -198,7 +199,8 @@ async function renderPredictTab(
   getSeriesOnce: () => Promise<{ date: string; amount: number }[]>,
   getCourses: () => Promise<CourseMaterial[]>,
   tip: Tooltip,
-  todayAmount: number
+  todayAmount: number,
+  data: LearningAmounts
 ): Promise<void> {
   pane.appendChild(h('div', { class: 'zss-empty' }, ['予測を計算中…']));
   try {
@@ -208,20 +210,29 @@ async function renderPredictTab(
     const total = courses.reduce((a, c) => a + c.total, 0);
     const passed = courses.reduce((a, c) => a + c.passed, 0);
     const mh = await getMaterialHistory();
-    const recentLearn = series.slice(-14);
+
+    // cold-start シード: 導入直後は自前蓄積が薄い。APIの直近14日窓(data.daily_amount)と
+    // 自前履歴を日付でマージし「取れるだけの日次」を確保（新規でも初日から予測を出せる）。
+    const dayMap = new Map<string, number>();
+    for (const p of series) dayMap.set(p.date, p.amount);
+    for (const d of data.daily_amount) if (d.amount != null) dayMap.set(d.date, d.amount);
+    const merged = [...dayMap.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, amount]) => ({ date, amount }));
+
+    const recentLearn = merged.slice(-14);
     const fallbackPerDay = recentLearn.length ? recentLearn.reduce((a, p) => a + p.amount, 0) / recentLearn.length : undefined;
 
+    // 曜日別ペース: 少数サンプルの曜日は全体平均へ縮小（ベイズ平均 C=3）。外れ日1つで暴れない。
     const wdSum = [0, 0, 0, 0, 0, 0, 0];
     const wdCnt = [0, 0, 0, 0, 0, 0, 0];
-    for (const p of series) {
+    let allSum = 0;
+    for (const p of merged) {
       const wd = new Date(p.date + 'T12:00:00').getDay();
       wdSum[wd] += p.amount;
       wdCnt[wd]++;
+      allSum += p.amount;
     }
-    const wdAvg = wdSum.map((s, i) => (wdCnt[i] ? s / wdCnt[i] : null));
-    const knownAvg = wdAvg.filter((v): v is number => v != null);
-    const overall = knownAvg.length ? knownAvg.reduce((a, b) => a + b, 0) / knownAvg.length : 1;
-    const weekdayWeights = wdAvg.map((v) => (v != null ? v : overall));
+    const overallDaily = merged.length ? allSum / merged.length : 1;
+    const weekdayWeights = wdSum.map((s, i) => bayesianAverage(s, wdCnt[i], overallDaily, 3));
 
     let dailySamples: { weekday: number; value: number }[];
     if (mh.series.length >= 5) {
@@ -233,7 +244,7 @@ async function renderPredictTab(
         dailySamples.push({ weekday: new Date(cur.date + 'T12:00:00').getDay(), value: Math.max(0, (cur.passed - prev.passed) / gap) });
       }
     } else {
-      dailySamples = series.map((p) => ({ weekday: new Date(p.date + 'T12:00:00').getDay(), value: p.amount }));
+      dailySamples = merged.map((p) => ({ weekday: new Date(p.date + 'T12:00:00').getDay(), value: p.amount }));
     }
 
     const pred = computePrediction({
@@ -250,7 +261,7 @@ async function renderPredictTab(
     });
 
     let rem = total - passed;
-    const recent14 = series.slice(-14);
+    const recent14 = merged.slice(-14);
     const actualCurve: { date: string; remaining: number }[] = [];
     for (let i = recent14.length - 1; i >= 0; i--) {
       actualCurve.unshift({ date: recent14[i].date, remaining: rem });
@@ -481,6 +492,7 @@ function renderPredictorSection(pred: Prediction, actual: { date: string; remain
       h('div', { class: 'zss-section-note' }, [`教材消化ペースで算出 · 締切 ${md(pred.finalDeadline)}`]),
     ]),
     verdict,
+    confidenceBadge(pred.confidence),
     h('div', { class: 'zss-pred-note' }, [
       pred.montecarlo
         ? `過去の日次消化を曜日別にサンプリングし ${pred.montecarlo.runs} 回シミュレーション（モンテカルロ）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`
@@ -511,6 +523,20 @@ function renderPredictorSection(pred: Prediction, actual: { date: string; remain
     h('div', { class: 'zss-sub-head' }, ['目標日から逆算']),
     h('div', { class: 'zss-target' }, [h('span', {}, ['完了させたい日:']), dateInput]),
     recOut,
+  ]);
+}
+
+/** 予測の確度（データ成熟度）バッジ。新規ユーザーに「暫定」を正直に伝える。 */
+function confidenceBadge(conf: Prediction['confidence']): HTMLElement {
+  const map = {
+    low: { cls: 'low', label: '確度 低', note: `データ${conf.days}日ぶん。日々貯まるほど精緻化します（暫定）` },
+    medium: { cls: 'mid', label: '確度 中', note: `データ${conf.days}日ぶん。もう少し貯まると安定します` },
+    high: { cls: 'high', label: '確度 高', note: `十分なデータ（${conf.days}日ぶん）で算出` },
+  }[conf.level];
+  return h('div', { class: 'zss-conf ' + map.cls }, [
+    h('span', { class: 'zss-conf-dot' }, []),
+    h('span', { class: 'zss-conf-label' }, [`予測の${map.label}`]),
+    h('span', { class: 'zss-conf-note' }, [`　${map.note}`]),
   ]);
 }
 

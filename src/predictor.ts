@@ -84,6 +84,7 @@ export interface Prediction {
   projectionCurve: { date: string; remaining: number }[]; // 曜日/祝日考慮の予測カーブ（MC無し時のフォールバック）
   montecarlo: MonteCarloResult | null; // モンテカルロ（確率・パーセンタイル帯）
   pOnTime: number | null; // 締切に間に合う確率
+  confidence: { level: 'low' | 'medium' | 'high'; days: number }; // 予測の確度（データ成熟度）
 }
 
 function daysBetween(a: Date, b: Date): number {
@@ -199,12 +200,19 @@ export function computePrediction(input: PredInput): Prediction {
         ? montecarlo.pOnTime >= 0.85
         : projectedFinish !== null && projectedFinish.getTime() <= finalDeadline.getTime();
 
+  // 予測の確度（データ成熟度）: 日次サンプル数と母数不確実性から。新規ユーザーに「暫定」を明示。
+  const sampleDays = input.dailySamples?.length ?? 0;
+  const relSE = montecarlo?.relSE ?? 1;
+  const level: Prediction['confidence']['level'] =
+    sampleDays >= 14 && relSE < 0.22 ? 'high' : sampleDays >= 6 ? 'medium' : 'low';
+
   return {
     total, passed, remaining, finalDeadline, daysLeft,
     requiredPerWeek, currentPerWeek, paceSource,
     projectedFinish, daysVsDeadline, onTrack, months, startDate,
     remainingReports: input.remainingReports, estimates, untouchedSubjects, projectionCurve,
     montecarlo, pOnTime,
+    confidence: { level, days: sampleDays },
   };
 }
 
