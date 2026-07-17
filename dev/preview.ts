@@ -8,11 +8,11 @@ import { __setMockReport } from '../src/api';
 
 // 教科別 教材（合計1500・完了320・未着手2教科）→ 教科別ボトルネック法の確認
 __setMockCourseMaterials([
-  { id: 1, title: '英語コミュニケーションⅢ', total: 400, passed: 250 },
-  { id: 2, title: '数学Ⅲ', total: 350, passed: 60 },
-  { id: 3, title: '物理', total: 300, passed: 10 },
-  { id: 4, title: '情報Ⅱ', total: 250, passed: 0 },
-  { id: 5, title: '論理・表現Ⅲ', total: 200, passed: 0 },
+  { id: 1, title: 'サンプル英語', total: 400, passed: 250 },
+  { id: 2, title: 'サンプル数学', total: 350, passed: 60 },
+  { id: 3, title: 'サンプル理科', total: 300, passed: 10 },
+  { id: 4, title: 'サンプル情報', total: 250, passed: 0 },
+  { id: 5, title: 'サンプル国語', total: 200, passed: 0 },
 ]);
 
 // 初回想定: 教材履歴はまだ空（total=1500だけ既知）。→ 直近の学習活動を暫定ペースに使う経路を確認。
@@ -37,15 +37,15 @@ __setMockReport({
 // モックのコースボリューム（教科ティアB＝残/総の確認用）
 const met = (ms: number, mc: number, t: number, r: number) => ({ movieSeconds: ms, movieCount: mc, testCount: t, reportCount: r });
 __setMockVolumes([
-  { id: 1, title: '英語コミュニケーションⅢ', total: met(41876, 163, 72, 24), remaining: met(17932, 64, 24, 8), totalMaterials: 400, passedMaterials: 250, totalChapters: 12, passedChapters: 7,
+  { id: 1, title: 'サンプル英語', total: met(41876, 163, 72, 24), remaining: met(17932, 64, 24, 8), totalMaterials: 400, passedMaterials: 250, totalChapters: 12, passedChapters: 7,
     chapters: [
-      { id: 1, title: '第1回　Gifts to Barcelona', total: met(1200, 8, 6, 2), remaining: met(0, 0, 0, 0), passed: 19, totalCount: 19 },
-      { id: 2, title: '第7回　Terracotta Warriors', total: met(3067, 13, 6, 2), remaining: met(1400, 6, 3, 1), passed: 15, totalCount: 21 },
+      { id: 1, title: '第1回　導入', total: met(1200, 8, 6, 2), remaining: met(0, 0, 0, 0), passed: 19, totalCount: 19 },
+      { id: 2, title: '第7回　応用', total: met(3067, 13, 6, 2), remaining: met(1400, 6, 3, 1), passed: 15, totalCount: 21 },
     ] },
-  { id: 2, title: '数学Ⅲ', total: met(28800, 120, 60, 20), remaining: met(24000, 100, 50, 17), totalMaterials: 350, passedMaterials: 60, totalChapters: 9, passedChapters: 1,
-    chapters: [{ id: 3, title: '第1回', total: met(2400, 10, 6, 2), remaining: met(2000, 8, 5, 2), passed: 2, totalCount: 24 }] },
-  { id: 4, title: '情報Ⅱ', total: met(18000, 80, 40, 12), remaining: met(18000, 80, 40, 12), totalMaterials: 250, passedMaterials: 0, totalChapters: 4, passedChapters: 0,
-    chapters: [{ id: 4, title: '第1回　情報社会', total: met(3100, 13, 6, 2), remaining: met(3100, 13, 6, 2), passed: 0, totalCount: 21 }] },
+  { id: 2, title: 'サンプル数学', total: met(28800, 120, 60, 20), remaining: met(24000, 100, 50, 17), totalMaterials: 350, passedMaterials: 60, totalChapters: 9, passedChapters: 1,
+    chapters: [{ id: 3, title: '第1回　基礎', total: met(2400, 10, 6, 2), remaining: met(2000, 8, 5, 2), passed: 2, totalCount: 24 }] },
+  { id: 4, title: 'サンプル情報', total: met(18000, 80, 40, 12), remaining: met(18000, 80, 40, 12), totalMaterials: 250, passedMaterials: 0, totalChapters: 4, passedChapters: 0,
+    chapters: [{ id: 4, title: '第1回　はじめに', total: met(3100, 13, 6, 2), remaining: met(3100, 13, 6, 2), passed: 0, totalCount: 21 }] },
 ]);
 
 // モック履歴（約50日）を注入して M2(カレンダー/トレンド/ストリーク) を埋める
