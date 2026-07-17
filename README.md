@@ -11,7 +11,8 @@
 > 下記の手順でソースからビルドして読み込みます。
 
 ## スクリーンショット
-> 画像はすべて**モックデータ**（サンプル教科名・架空の数値）です。
+> 画像はすべて**モックデータ**（サンプル教科名・架空の数値）です。実際の画面とは、本家サイトの
+> デザイン更新・データ内容・ブラウザ環境などにより**細部が異なる場合があります**。
 
 | 予測（北極星） | 推移 |
 |:--:|:--:|
@@ -46,11 +47,18 @@ npm run typecheck
 npm run build      # dist/content.js (IIFE) を生成
 ```
 
-## Chrome へ読み込み（実サイトで確認）
-1. `npm run build`
+## Chrome へ読み込み
+**A. リリースzipから（ビルド不要）**
+1. [Releases](https://github.com/mug1ch4/zen-study-stats/releases) から `zen-study-stats-<version>.zip` を入手して展開
+2. `chrome://extensions` →「デベロッパーモード」ON
+3. 「パッケージ化されていない拡張機能を読み込む」→ 展開したフォルダを選択
+
+**B. ソースからビルド**
+1. `npm install && npm run build`
 2. `chrome://extensions` →「デベロッパーモード」ON
 3. 「パッケージ化されていない拡張機能を読み込む」→ このフォルダを選択
-4. ZEN Study にログインして各ページを開く（`/setting`・コース・チャプター等）
+
+いずれも、ZEN Study にログインして各ページを開く（`/setting`・コース・チャプター等）と有効になります。
 
 > content script は `www.nnn.ed.nico` 全体にマッチ（`run_at: document_start`）。SPA遷移・React再描画に
 > MutationObserver + history パッチで追従。/setting の本家パネルは描画前(rAF)に隠してフラッシュ防止。
