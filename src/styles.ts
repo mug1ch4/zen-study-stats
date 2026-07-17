@@ -200,7 +200,11 @@ export const CSS = `
 .zss-vol-metric { margin-right: 10px; white-space: nowrap; }
 .zss-vol-metric .ml { color: var(--muted); }
 .zss-vol-summary { background: var(--surface-2); border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
+.zss-vol-summary-flex { display: flex; align-items: center; gap: 14px; }
+.zss-vol-summary-flex svg { flex: 0 0 auto; }
+.zss-vol-sum-body { min-width: 0; flex: 1 1 auto; }
 .zss-vol-sum-main { font-size: 13px; font-weight: 700; }
+.zss-vol-sum-note { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .zss-vol-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .zss-vol-chip { font-size: 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
 .zss-vol-chip .l { color: var(--muted); margin-right: 4px; }

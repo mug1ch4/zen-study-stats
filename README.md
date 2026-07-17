@@ -69,7 +69,8 @@ npm run build      # dist/content.js (IIFE) を生成
 - [x] 教科別の残り（クリックでコースへ）
 - [x] コース/章画面の残りサマリ注入
 - [x] /setting カードの情報設計 再構成（3タブ化＋全教科の 残/総 一覧の統合）
-- [ ] 他カード: コース進捗ドーナツ / 教科レーダー 等
+- [x] 全体進捗ドーナツ（教科タブ・単一割合の完了ゲージ。各コース比較は棒バーのまま）
+- [ ] 他カード候補（※教科レーダーは面積歪みで誤読しやすく可視化の定石上見送り。遅れ教科のボトルネック強調で代替を検討）
 
 ## 構成
 ```
@@ -91,7 +92,7 @@ src/
   format.ts            日付・曜日・時間・整形
   styles.ts            Shadow DOM CSS（本家トークン準拠, light/dark, カレンダーランプ）
   dom.ts               h()/s() 生成ヘルパー
-  charts/              dailyBars / weekdayBars / calendar / trend / burndown（自前SVG）
+  charts/              dailyBars / weekdayBars / calendar / trend / burndown / donut（自前SVG）
   ui/                  learningCard / volumeTable / dataTable / tooltip
 dev/                   preview.html / preview.ts（ブラウザ確認用・モックデータ）
 ```

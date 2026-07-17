@@ -14,6 +14,7 @@ import { renderCalendar } from '../charts/calendar';
 import { renderTrend } from '../charts/trend';
 import { dataTable } from './dataTable';
 import { renderBurndown } from '../charts/burndown';
+import { renderDonut } from '../charts/donut';
 import { computeCourseVolumes } from '../courseStats';
 import { renderSubjects } from './volumeTable';
 import { renderDataManage } from './dataManage';
@@ -306,6 +307,16 @@ function md(d: Date): string {
 /** 教科別の残作業内訳（残教材の多い順・未着手を明示）。 */
 function renderSubjectRemaining(courses: { id: number; title: string; total: number; passed: number }[]): HTMLElement {
   const sorted = [...courses].sort((a, b) => (b.total - b.passed) - (a.total - a.passed));
+  const passedAll = courses.reduce((a, c) => a + c.passed, 0);
+  const totalAll = courses.reduce((a, c) => a + c.total, 0);
+  const pctAll = totalAll ? Math.round((passedAll / totalAll) * 100) : 0;
+  const donutSummary = h('div', { class: 'zss-vol-summary zss-vol-summary-flex' }, [
+    renderDonut(passedAll, totalAll, { size: 96, label: '教材' }),
+    h('div', { class: 'zss-vol-sum-body' }, [
+      h('div', { class: 'zss-vol-sum-main' }, [`全${courses.length}コース · 教材 ${passedAll}/${totalAll}（${pctAll}%）`]),
+      h('div', { class: 'zss-vol-sum-note' }, [`残り ${totalAll - passedAll} 教材`]),
+    ]),
+  ]);
   const rows = sorted.map((c) => {
     const rem = Math.max(0, c.total - c.passed);
     const pct = c.total ? Math.round((c.passed / c.total) * 100) : 0;
@@ -322,6 +333,7 @@ function renderSubjectRemaining(courses: { id: number; title: string; total: num
     return row;
   });
   return section('教科別の残り', '残教材の多い順', [
+    donutSummary,
     ...rows,
     dataTable(
       'データを表で見る',

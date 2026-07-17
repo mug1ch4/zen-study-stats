@@ -2,6 +2,7 @@ import type { CourseVol, Metrics } from '../courseStats';
 import { durationStr } from '../format';
 import { h } from '../dom';
 import { dataTable } from './dataTable';
+import { renderDonut } from '../charts/donut';
 
 /** 教科の統合ビュー（残/総: 教材・動画時間・本数・テスト・レポート）。残の多い順。 */
 export function renderSubjects(courses: CourseVol[]): HTMLElement {
@@ -12,14 +13,17 @@ export function renderSubjects(courses: CourseVol[]): HTMLElement {
   const totalMat = courses.reduce((a, c) => a + c.totalMaterials, 0);
   const pct = totalMat ? Math.round((passedMat / totalMat) * 100) : 0;
 
-  // 全体サマリ（このビューの主役）
+  // 全体サマリ（このビューの主役）: 進捗ドーナツ ＋ 残/総チップ
   wrap.appendChild(
-    h('div', { class: 'zss-vol-summary' }, [
-      h('div', { class: 'zss-vol-sum-main' }, [`全${courses.length}コース · 教材 ${passedMat}/${totalMat}（${pct}%）`]),
-      h('div', { class: 'zss-vol-chips' }, [
-        chip('動画', `残${durationStr(remM.movieSeconds)} / ${durationStr(totM.movieSeconds)}`),
-        chip('確認テスト', `残${remM.testCount} / ${totM.testCount}`),
-        chip('レポート', `残${remM.reportCount} / ${totM.reportCount}`),
+    h('div', { class: 'zss-vol-summary zss-vol-summary-flex' }, [
+      renderDonut(passedMat, totalMat, { size: 96, label: '教材' }),
+      h('div', { class: 'zss-vol-sum-body' }, [
+        h('div', { class: 'zss-vol-sum-main' }, [`全${courses.length}コース · 教材 ${passedMat}/${totalMat}（${pct}%）`]),
+        h('div', { class: 'zss-vol-chips' }, [
+          chip('動画', `残${durationStr(remM.movieSeconds)} / ${durationStr(totM.movieSeconds)}`),
+          chip('確認テスト', `残${remM.testCount} / ${totM.testCount}`),
+          chip('レポート', `残${remM.reportCount} / ${totM.reportCount}`),
+        ]),
       ]),
     ])
   );
