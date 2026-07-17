@@ -175,9 +175,14 @@ export async function recordVisit(nowMs: number, getAmount: () => Promise<number
     const todayAmount = await getAmount(); // ゲート通過時のみ当日学習数を取得
     const h = jstHour(nowMs);
     const day = zenTodayISO(nowMs);
+    const gap = nowMs - (s.lastTs ?? 0);
     s.visit[h] = (s.visit[h] ?? 0) + 1;
-    if (s.lastDay === day && todayAmount > s.lastAmount) {
-      s.study[h] = (s.study[h] ?? 0) + (todayAmount - s.lastAmount); // 同日内の増分を帰属
+    // 増分は「短時間(≤60分)で連続サンプルできた時」だけ現在時刻へ帰属する。
+    // 長時間ぶりの訪問だと、その学習が何時に行われたか特定できず（別デバイス/別時間帯で
+    // 進めた分が観測時刻に誤帰属される）ため、帰属せず基準値のみ更新する。
+    const MAX_ATTRIBUTE_GAP = 60 * 60 * 1000;
+    if (s.lastDay === day && todayAmount > s.lastAmount && gap <= MAX_ATTRIBUTE_GAP) {
+      s.study[h] = (s.study[h] ?? 0) + (todayAmount - s.lastAmount);
     }
     s.lastDay = day;
     s.lastAmount = todayAmount;

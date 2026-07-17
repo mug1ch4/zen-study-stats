@@ -122,7 +122,7 @@ export function timeOfDayTendency(hour: { study: number[]; visit: number[] }): S
     const peak = hour.study.indexOf(Math.max(...hour.study));
     return { title: '時間帯の傾向', insights: [
       { kind: 'good', text: `学習が最も進む時間帯: 【${topRange(hour.study)}】（ピークは ${band(peak)}）。` },
-      { kind: 'note', text: '※ZEN Study利用中の学習数の増分から推定（使うほど精度向上）。' },
+      { kind: 'note', text: '※短時間(≤60分)で連続利用した時の学習数の増分のみ反映（別デバイスや久々の訪問ぶんは誤帰属を避けて除外）。使うほど精度向上。' },
     ] };
   }
   if (totalVisit >= 4) {
