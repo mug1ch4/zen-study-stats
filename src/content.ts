@@ -1,10 +1,10 @@
 // コンテンツスクリプトのエントリ。
 // 【第一原則】GETのみ・read-only。DOMは自ブラウザの描画変更のみ。学習記録は一切変更しない。
 import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } from './api';
-import { fetchMaterialTotals } from './courseApi';
+import { fetchMaterialTotals, fetchSectionQuestions } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, initDarkModeFrame, preInitDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
-import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, getSeries } from './history';
+import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, getSeries, recordWorkTime } from './history';
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
 import { notifyRolloverSoon, notifyProgress, notifyWeekReview } from './notify';
@@ -121,6 +121,27 @@ function maybeRecordVisit(): void {
 // 【誤検知対策】answerings は不合格でも発火しうる。イベントは"トリガー"に過ぎず、
 //   実際に passed 合計が増えた時だけカウント（増えていなければ＝不合格/既計上で無視）。
 let compDebounce = 0;
+// 所要時間の実測: 直前の確定完了イベントからの間隔 ≒ その教材にかけた時間。
+// 曖昧なケースは記録しない（delta≠1・間隔が0.5〜45分の外・セッション初回）。
+interface CompletionEv { courseId: number; chapterId: number; resource: string; resourceId: number; ts: number }
+let pendingEv: CompletionEv | null = null;
+let prevConfirmedTs = 0;
+
+async function maybeRecordWorkTime(ev: CompletionEv, delta: number): Promise<void> {
+  const kindM = /^(?:evaluation|essay)_(test|report)s$/.exec(ev.resource);
+  const prev = prevConfirmedTs;
+  prevConfirmedTs = ev.ts; // 動画含む全確定完了で基準を更新（次の間隔測定の起点）
+  if (!kindM || delta !== 1 || !prev) return;
+  const durMin = (ev.ts - prev) / 60000;
+  if (durMin < 0.5 || durMin > 45) return; // 休憩・別作業を挟んだ間隔は捨てる
+  try {
+    const q = await fetchSectionQuestions(ev.courseId, ev.chapterId, ev.resourceId);
+    await recordWorkTime(ev.courseId, kindM[1] as 'test' | 'report', durMin, q ?? 1);
+  } catch {
+    /* 実測は補助データ。失敗しても本流に影響させない */
+  }
+}
+
 // 完了を"確定"させる。集計API(passed_materials)はサーバ側の更新にラグがあり、
 // 検知直後は増分0のことがある（動画passed直後など）。増分0なら数秒あけて数回リトライする。
 async function settleCompletion(attempt: number): Promise<void> {
@@ -146,6 +167,10 @@ async function settleCompletion(attempt: number): Promise<void> {
     }
     await setLastPassed(mt.passed);
     await recordCompletion(Date.now(), delta); // "その時刻"へ実カウントぶん加算（正確な時間帯）
+    if (pendingEv) {
+      void maybeRecordWorkTime(pendingEv, delta); // 所要時間の実測（教科×種別の分/問）
+      pendingEv = null;
+    }
     window.dispatchEvent(new Event('zss:hourupdate')); // 時間帯トレンドをライブ更新
     window.dispatchEvent(new Event('zss:completion')); // 予測/教科タブ（今日の目標）をライブ再描画
     await notifyProgress(mt.passed, mt.total); // 節目トースト
@@ -170,6 +195,10 @@ function listenCompletions(): void {
     }
     if (d.__zss === 'completion') {
       if (DEV_NOTIFY) showToast(`🔎 [dev] 完了通信を検知: course ${d.courseId} / ch ${d.chapterId}`, { icon: '🔎', durationMs: 9000 });
+      const dd = d as { courseId?: string; chapterId?: string; resource?: string; resourceId?: string };
+      if (dd.courseId && dd.chapterId && dd.resource && dd.resourceId) {
+        pendingEv = { courseId: +dd.courseId, chapterId: +dd.chapterId, resource: dd.resource, resourceId: +dd.resourceId, ts: Date.now() };
+      }
       onCompletion();
     }
   });
@@ -189,7 +218,7 @@ function startup(): void {
   started = true;
   void initDarkMode(); // サイト全体ダークモード（全ページ）
   try {
-    void chrome.storage?.local.remove('zss:courseVol3'); // 旧集計キャッシュの残留掃除（v0.1.8でv4へ移行）
+    void chrome.storage?.local.remove(['zss:courseVol3', 'zss:courseVol4', 'zss:courseVol5']); // 旧集計キャッシュの残留掃除
   } catch {
     /* ignore */
   }

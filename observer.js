@@ -13,7 +13,7 @@
   //   動画: PUT  .../n_school/courses/{c}/chapters/{ch}/movies/{id}/progress/passed
   //   テスト: POST .../n_school/courses/{c}/chapters/{ch}/evaluation_tests/{id}/answerings
   //   （レポート等の answerings 系も同形と想定）
-  var RE = /\/n_school\/courses\/(\d+)\/chapters\/(\d+)\/[a-z_]+\/(\d+)\/(?:progress\/passed|answerings)\b/i;
+  var RE = /\/n_school\/courses\/(\d+)\/chapters\/(\d+)\/([a-z_]+)\/(\d+)\/(?:progress\/passed|answerings)\b/i;
   function report(method, url) {
     try {
       if (!/^(PUT|POST)$/i.test(method || '')) return;
@@ -21,8 +21,9 @@
       if (!m) return;
       // 完了PUTは教材iframe内から送られるため、トップフレームの content.js へ通知する
       // （iframe と top は同一オリジン www.nnn.ed.nico）。top 不在時は自分へ。
+      // resource(movies/evaluation_tests/…)とidは所要時間の実測（教科別の分/問）に使う。
       var target = window.top || window;
-      target.postMessage({ __zss: 'completion', courseId: m[1], chapterId: m[2] }, '*');
+      target.postMessage({ __zss: 'completion', courseId: m[1], chapterId: m[2], resource: m[3], resourceId: m[4] }, '*');
     } catch (e) {
       /* noop */
     }

@@ -14,6 +14,8 @@ export interface Metrics {
   movieCount: number;
   testCount: number;
   reportCount: number;
+  testQuestions: number; // テストの合計問題数（時間換算の精度向上用）
+  reportQuestions: number; // レポートの合計問題数
 }
 export interface ChapterVol {
   id: number;
@@ -28,6 +30,8 @@ export interface CourseVol {
   title: string;
   total: Metrics;
   remaining: Metrics;
+  /** 視聴任意（supplement）の集計。本家進捗の対象外だが、設定で残り学習量に含められる。 */
+  supp: { total: Metrics; remaining: Metrics };
   totalMaterials: number;
   passedMaterials: number;
   totalChapters: number;
@@ -38,7 +42,7 @@ export interface CourseVol {
 // コースIDごとに { sig, vol } を保存し、進捗が変わったコースだけ再集計する差分キャッシュ。
 // （全コース連結の署名だと1コース進んだだけで全再取得になる問題を回避）
 // v4: supplement（視聴任意）を集計から除外した版。旧キャッシュ(v3)は自然放棄。
-const CACHE_KEY = 'zss:courseVol4';
+const CACHE_KEY = 'zss:courseVol6'; // v6: 問題数＋supplement並走集計を追加
 type CourseCache = Record<number, { sig: string; vol: CourseVol }>;
 
 // プレビュー/テスト用
@@ -47,27 +51,35 @@ export function __setMockVolumes(v: CourseVol[]): void {
   mock = v;
 }
 
-const zero = (): Metrics => ({ movieSeconds: 0, movieCount: 0, testCount: 0, reportCount: 0 });
+const zero = (): Metrics => ({ movieSeconds: 0, movieCount: 0, testCount: 0, reportCount: 0, testQuestions: 0, reportQuestions: 0 });
 function addSection(m: Metrics, s: Section): void {
   if (s.resource_type === 'movie') {
     m.movieSeconds += s.length ?? 0;
     m.movieCount++;
   } else if (s.resource_type === 'evaluation_test' || s.resource_type === 'essay_test') {
     m.testCount++;
+    m.testQuestions += s.total_question ?? 0;
   } else if (s.resource_type === 'evaluation_report' || s.resource_type === 'essay_report') {
     m.reportCount++;
+    m.reportQuestions += s.total_question ?? 0;
   }
 }
-/** 総数と残（未passed）を1パスで両方集計。視聴任意(supplement)は本家の進捗対象外なので除外。 */
-function tally(sections: Section[]): { total: Metrics; remaining: Metrics } {
+/** 総数と残（未passed）を1パスで集計。main（本家進捗の母集団）と supplement（視聴任意）を分けて持つ。 */
+function tally(sections: Section[]): { total: Metrics; remaining: Metrics; suppTotal: Metrics; suppRemaining: Metrics } {
   const total = zero();
   const remaining = zero();
+  const suppTotal = zero();
+  const suppRemaining = zero();
   for (const s of sections) {
-    if (isSupplement(s)) continue; // 本家の total_count/passed_materials と母集団を揃える
+    if (isSupplement(s)) {
+      addSection(suppTotal, s);
+      if (!s.passed) addSection(suppRemaining, s);
+      continue;
+    }
     addSection(total, s);
     if (!s.passed) addSection(remaining, s);
   }
-  return { total, remaining };
+  return { total, remaining, suppTotal, suppRemaining };
 }
 function sumMetrics(list: Metrics[]): Metrics {
   const acc = zero();
@@ -76,6 +88,8 @@ function sumMetrics(list: Metrics[]): Metrics {
     acc.movieCount += m.movieCount;
     acc.testCount += m.testCount;
     acc.reportCount += m.reportCount;
+    acc.testQuestions += m.testQuestions;
+    acc.reportQuestions += m.reportQuestions;
   }
   return acc;
 }
@@ -120,23 +134,27 @@ export async function computeCourseVolumes(onProgress?: (msg: string) => void): 
     const secByChapter = new Map(
       (await fetchCourseChapters(c.id, chIds)).map((x) => [x.id, x.sections])
     );
-    const chapters: ChapterVol[] = c.chapters.map((ch) => {
+    const tallies = c.chapters.map((ch) => {
       const secs = secByChapter.get(ch.id) ?? [];
-      const t = tally(secs);
-      return {
-        id: ch.id,
-        title: ch.title,
-        total: t.total,
-        remaining: t.remaining,
-        passed: ch.progress?.passed_count ?? 0,
-        totalCount: ch.progress?.total_count ?? secs.length,
-      };
+      return { ch, secs, t: tally(secs) };
     });
+    const chapters: ChapterVol[] = tallies.map(({ ch, secs, t }) => ({
+      id: ch.id,
+      title: ch.title,
+      total: t.total,
+      remaining: t.remaining,
+      passed: ch.progress?.passed_count ?? 0,
+      totalCount: ch.progress?.total_count ?? secs.length,
+    }));
     const vol: CourseVol = {
       id: c.id,
       title: titleById.get(c.id) ?? c.title,
       total: sumMetrics(chapters.map((x) => x.total)),
       remaining: sumMetrics(chapters.map((x) => x.remaining)),
+      supp: {
+        total: sumMetrics(tallies.map((x) => x.t.suppTotal)),
+        remaining: sumMetrics(tallies.map((x) => x.t.suppRemaining)),
+      },
       totalMaterials: c.progress?.total_materials ?? 0,
       passedMaterials: c.progress?.passed_materials ?? 0,
       totalChapters: c.progress?.total_chapters ?? c.chapters.length,

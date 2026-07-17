@@ -5,7 +5,10 @@ import { __setMockVolumes } from '../src/courseStats';
 import { __setMockCourseMaterials } from '../src/courseApi';
 import { __setMockReport, __setMockLearning } from '../src/api';
 
-const met = (ms: number, mc: number, t: number, r: number) => ({ movieSeconds: ms, movieCount: mc, testCount: t, reportCount: r });
+const met = (ms: number, mc: number, t: number, r: number) => ({
+  movieSeconds: ms, movieCount: mc, testCount: t, reportCount: r,
+  testQuestions: t * 2, reportQuestions: r * 10, // 実測に近い問題数（テスト≒2問/本・レポート≒10問/本）
+});
 
 // モック履歴（約50日）を注入して カレンダー/トレンド/ストリーク を埋める
 function mockHistory(): History {
@@ -57,15 +60,16 @@ export function installMocks(): LearningAmounts {
   });
 
   // コースボリューム（動画時間/テスト/レポートの残/総・教科別シェアの確認用）
+  const supp = (ms: number, mc: number) => ({ total: met(ms, mc, 0, 0), remaining: met(ms, mc, 0, 0) });
   __setMockVolumes([
-    { id: 1, title: 'サンプル英語', total: met(41876, 163, 72, 24), remaining: met(17932, 64, 24, 8), totalMaterials: 400, passedMaterials: 250, totalChapters: 12, passedChapters: 7,
+    { id: 1, title: 'サンプル英語', total: met(41876, 163, 72, 24), remaining: met(17932, 64, 24, 8), supp: supp(1800, 4), totalMaterials: 400, passedMaterials: 250, totalChapters: 12, passedChapters: 7,
       chapters: [
         { id: 1, title: '第1回　導入', total: met(1200, 8, 6, 2), remaining: met(0, 0, 0, 0), passed: 19, totalCount: 19 },
         { id: 2, title: '第7回　応用', total: met(3067, 13, 6, 2), remaining: met(1400, 6, 3, 1), passed: 15, totalCount: 21 },
       ] },
-    { id: 2, title: 'サンプル数学', total: met(28800, 120, 60, 20), remaining: met(24000, 100, 50, 17), totalMaterials: 350, passedMaterials: 60, totalChapters: 9, passedChapters: 1,
+    { id: 2, title: 'サンプル数学', total: met(28800, 120, 60, 20), remaining: met(24000, 100, 50, 17), supp: supp(4200, 8), totalMaterials: 350, passedMaterials: 60, totalChapters: 9, passedChapters: 1,
       chapters: [{ id: 3, title: '第1回　基礎', total: met(2400, 10, 6, 2), remaining: met(2000, 8, 5, 2), passed: 2, totalCount: 24 }] },
-    { id: 4, title: 'サンプル情報', total: met(18000, 80, 40, 12), remaining: met(18000, 80, 40, 12), totalMaterials: 250, passedMaterials: 0, totalChapters: 4, passedChapters: 0,
+    { id: 4, title: 'サンプル情報', total: met(18000, 80, 40, 12), remaining: met(18000, 80, 40, 12), supp: supp(0, 0), totalMaterials: 250, passedMaterials: 0, totalChapters: 4, passedChapters: 0,
       chapters: [{ id: 4, title: '第1回　はじめに', total: met(3100, 13, 6, 2), remaining: met(3100, 13, 6, 2), passed: 0, totalCount: 21 }] },
   ]);
 

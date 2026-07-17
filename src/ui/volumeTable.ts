@@ -5,8 +5,15 @@ import { dataTable } from './dataTable';
 import { renderDonut } from '../charts/donut';
 import { renderBreakdownDonut } from '../charts/donutBreakdown';
 
+import type { WorkTimes } from '../history';
+
+export interface SubjectsOpts {
+  includeSupp?: boolean; // 視聴任意の補助動画を残り学習量に含める
+  onToggleSupp?: (v: boolean) => void;
+}
+
 /** 教科の統合ビュー（残/総: 教材・動画時間・本数・テスト・レポート）。残の多い順。 */
-export function renderSubjects(courses: CourseVol[]): HTMLElement {
+export function renderSubjects(courses: CourseVol[], wt?: WorkTimes, opts?: SubjectsOpts): HTMLElement {
   const wrap = h('div', { class: 'zss-vol' }, []);
   const totM = sum(courses, (c) => c.total);
   const remM = sum(courses, (c) => c.remaining);
@@ -30,9 +37,23 @@ export function renderSubjects(courses: CourseVol[]): HTMLElement {
   );
 
   // 教科別の残り学習量シェア（色分けドーナツ）。残があるときのみ。
-  const breakdown = renderBreakdownDonut(courses);
+  const breakdown = renderBreakdownDonut(courses, wt, opts?.includeSupp);
   if (breakdown) {
-    wrap.appendChild(sectionCard('教科別の残り学習量シェア', breakdown));
+    const body = h('div', {}, [breakdown]);
+    // 視聴任意（supplement）を含めるかの設定（本家準拠の完了%・予測には影響しない）
+    const suppTotal = courses.reduce((a, c) => a + (c.supp?.total.movieCount ?? 0), 0);
+    if (suppTotal > 0 || opts?.includeSupp) {
+      const cb = h('input', { type: 'checkbox', id: 'zss-inc-supp' }) as HTMLInputElement;
+      cb.checked = !!opts?.includeSupp;
+      cb.addEventListener('change', () => opts?.onToggleSupp?.(cb.checked));
+      body.appendChild(
+        h('label', { class: 'zss-supp-toggle', for: 'zss-inc-supp' }, [
+          cb,
+          `視聴任意の補助動画（全${suppTotal}本）を残り学習量に含める`,
+        ])
+      );
+    }
+    wrap.appendChild(sectionCard('教科別の残り学習量シェア', body));
   }
 
   // 残の多い順
@@ -111,9 +132,11 @@ function sum(courses: CourseVol[], pick: (c: CourseVol) => Metrics): Metrics {
       a.movieCount += m.movieCount;
       a.testCount += m.testCount;
       a.reportCount += m.reportCount;
+      a.testQuestions += m.testQuestions;
+      a.reportQuestions += m.reportQuestions;
       return a;
     },
-    { movieSeconds: 0, movieCount: 0, testCount: 0, reportCount: 0 }
+    { movieSeconds: 0, movieCount: 0, testCount: 0, reportCount: 0, testQuestions: 0, reportQuestions: 0 }
   );
 }
 function sectionCard(title: string, body: HTMLElement): HTMLElement {

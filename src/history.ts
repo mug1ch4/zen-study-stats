@@ -224,6 +224,58 @@ export async function savePredSnapshot(entry: PredLogEntry): Promise<void> {
   }
 }
 
+// --- 表示設定: 視聴任意の補助教材（supplement動画）を残り学習量に含めるか ---
+// 本家準拠の進捗（完了%・予測・今日の目標）には影響しない。拡張の自前集計の表示のみ。
+const KEY_INCSUPP = 'zss:includeSupp';
+export async function getIncludeSupp(): Promise<boolean> {
+  if (memOverride) return false;
+  try {
+    const r = await chrome.storage.local.get([KEY_INCSUPP]);
+    return !!r?.[KEY_INCSUPP];
+  } catch {
+    return false;
+  }
+}
+export async function setIncludeSupp(v: boolean): Promise<void> {
+  if (memOverride) return;
+  try {
+    await chrome.storage.local.set({ [KEY_INCSUPP]: v });
+  } catch {
+    /* ignore */
+  }
+}
+
+// --- テスト/レポートの所要時間 実測（教科×種別の 分/問） ---
+// 完了検知の「直前の完了からの間隔」を所要時間の近似として蓄積し、
+// 残り学習量シェアの時間換算を固定目安→教科別実測へ精緻化する。
+const KEY_WORKTIME = 'zss:workTime';
+export interface WorkStat { min: number; q: number; n: number } // 合計分・合計問題数・サンプル数
+export type WorkTimes = Record<string, { test?: WorkStat; report?: WorkStat }>;
+
+export async function getWorkTimes(): Promise<WorkTimes> {
+  if (memOverride) return {};
+  try {
+    const r = await chrome.storage.local.get([KEY_WORKTIME]);
+    return (r?.[KEY_WORKTIME] as WorkTimes) ?? {};
+  } catch {
+    return {};
+  }
+}
+export async function recordWorkTime(courseId: number, kind: 'test' | 'report', minutes: number, questions: number): Promise<void> {
+  if (memOverride || minutes <= 0) return;
+  try {
+    const wt = await getWorkTimes();
+    const c = (wt[courseId] ??= {});
+    const s = (c[kind] ??= { min: 0, q: 0, n: 0 });
+    s.min += minutes;
+    s.q += Math.max(1, questions);
+    s.n += 1;
+    await chrome.storage.local.set({ [KEY_WORKTIME]: wt });
+  } catch {
+    /* ignore */
+  }
+}
+
 // --- 実績バッジの解除記録（初達成日を残す） ---
 const KEY_ACH = 'zss:achievements'; // { [id]: 達成日"YYYY-MM-DD" }
 export async function getAchievementDates(): Promise<Record<string, string>> {

@@ -214,6 +214,49 @@ export function timeOfDayTendency(hour: { study: number[]; visit: number[] }): S
   return { title: '時間帯の傾向', insights: [{ kind: 'note', text: 'PCで動画/テスト等を完了すると、その時刻を記録します（APIに時刻が無いため、本家の完了通信を観測して自前計測）。数回で傾向が出ます。' }] };
 }
 
+/** 所要時間の実測: 完了検知の間隔から蓄積した「教科×種別の所要」を詳細表示。 */
+export function workTimeTendency(
+  wt: Record<string, { test?: { min: number; q: number; n: number }; report?: { min: number; q: number; n: number } }>,
+  courses: CourseMaterial[]
+): Section {
+  const titleById = new Map(courses.map((c) => [String(c.id), c.title]));
+  const rows: { title: string; parts: string[]; n: number }[] = [];
+  let allTest = { min: 0, q: 0, n: 0 };
+  let allRep = { min: 0, q: 0, n: 0 };
+  const fmt = (st: { min: number; q: number; n: number }): string =>
+    `平均 ${r1(st.min / st.n)}分/本${st.q > 0 ? `（${r1(st.min / st.q)}分/問）` : ''}・${st.n}件`;
+  for (const [id, c] of Object.entries(wt)) {
+    const parts: string[] = [];
+    let n = 0;
+    if (c.test?.n) {
+      parts.push(`テスト ${fmt(c.test)}`);
+      allTest = { min: allTest.min + c.test.min, q: allTest.q + c.test.q, n: allTest.n + c.test.n };
+      n += c.test.n;
+    }
+    if (c.report?.n) {
+      parts.push(`レポート ${fmt(c.report)}`);
+      allRep = { min: allRep.min + c.report.min, q: allRep.q + c.report.q, n: allRep.n + c.report.n };
+      n += c.report.n;
+    }
+    if (parts.length) rows.push({ title: titleById.get(id) ?? `コース${id}`, parts, n });
+  }
+  if (!rows.length) {
+    return {
+      title: '所要時間の実測',
+      insights: [{ kind: 'note', text: 'PCでテスト/レポートを完了すると、直前の完了からの間隔で所要時間を自動実測します（教科別の残り時間換算の精度が上がります）。' }],
+    };
+  }
+  rows.sort((a, b) => b.n - a.n);
+  const insights: Insight[] = [];
+  const overall: string[] = [];
+  if (allTest.n) overall.push(`テスト ${fmt(allTest)}`);
+  if (allRep.n) overall.push(`レポート ${fmt(allRep)}`);
+  insights.push({ kind: 'good', text: `全体: ${overall.join(' / ')}。` });
+  for (const r of rows.slice(0, 8)) insights.push({ kind: 'note', text: `${r.title}: ${r.parts.join(' / ')}` });
+  insights.push({ kind: 'note', text: '※直前の完了からの間隔（0.5〜45分のみ採用・確定完了時のみ）による近似。サンプルが増えるほど教科別シェアの時間換算に反映されます。' });
+  return { title: '所要時間の実測', insights };
+}
+
 /** 必修に関するアドバイス: 残りレポート・締切・最優先コース・ペース判定。 */
 export function requiredAdvice(
   courses: CourseMaterial[],

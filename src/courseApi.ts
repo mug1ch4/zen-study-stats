@@ -160,6 +160,15 @@ export async function fetchCourseRemaining(courseId: number): Promise<RemainingW
   return tallyRemaining(all);
 }
 
+/** 章内の特定教材の問題数（所要時間実測の正規化用）。見つからなければ null。 */
+export async function fetchSectionQuestions(courseId: number, chapterId: number, sectionId: number): Promise<number | null> {
+  const j = await getJSON<{ chapter?: { sections?: (Section & { id?: number })[] } }>(
+    `/v2/material/courses/${courseId}/chapters/${chapterId}`
+  );
+  const sec = (j.chapter?.sections ?? []).find((s) => (s as { id?: number }).id === sectionId);
+  return sec?.total_question ?? null;
+}
+
 /** 1章の残り（未完了）作業量。 */
 export async function fetchChapterRemaining(courseId: number, chapterId: number): Promise<RemainingWork> {
   const j = await getJSON<{ chapter?: { sections?: Section[] } }>(

@@ -344,6 +344,8 @@ export const CSS = `
 .zss-bd-share { color: var(--ink); font-weight: 800; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
 .zss-bd-detail { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .zss-bd-cap { font-size: 10px; color: var(--faint); margin-top: 8px; line-height: 1.5; }
+.zss-supp-toggle { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); margin-top: 8px; cursor: pointer; user-select: none; }
+.zss-supp-toggle input { accent-color: var(--primary); cursor: pointer; }
 
 /* tooltip */
 .zss-tip {

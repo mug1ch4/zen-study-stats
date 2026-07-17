@@ -16,6 +16,8 @@ const PREFIX = 'zss:';
 const SKIP_KEYS = new Set([
   'zss:courseVol3', // 旧キャッシュ（残っていても取り込まない）
   'zss:courseVol4',
+  'zss:courseVol5',
+  'zss:courseVol6',
   'zss:lastSnap',
   'zss:lastPassed',
   'zss:dayStart',

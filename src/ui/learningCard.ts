@@ -5,11 +5,11 @@ import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
-import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements } from '../history';
+import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements, getWorkTimes, getIncludeSupp, setIncludeSupp } from '../history';
 import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
 import { evaluateCalibration } from '../calibration';
 import { zenMondayISO } from '../format';
-import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, type Section } from '../analysis';
+import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, type Section } from '../analysis';
 import { motivationNudges, type Nudge } from '../motivation';
 import { countUp } from '../anim';
 import { notifyProgress, notifyQuest } from '../notify';
@@ -420,12 +420,24 @@ async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<Co
     volBtn.addEventListener('click', () => {
       volBtn.disabled = true;
       volBtn.textContent = '集計中…';
-      void computeCourseVolumes((msg) => (volBtn.textContent = msg))
-        .then((vols) => {
+      void Promise.all([computeCourseVolumes((msg) => (volBtn.textContent = msg)), getWorkTimes(), getIncludeSupp()])
+        .then(([vols, wt, incSupp]) => {
           tierA.remove();
           volBtn.remove();
           volNote.remove();
-          volBody.appendChild(renderSubjects(vols));
+          const rerender = (inc: boolean): void => {
+            volBody.textContent = '';
+            volBody.appendChild(
+              renderSubjects(vols, wt, {
+                includeSupp: inc,
+                onToggleSupp: (v) => {
+                  void setIncludeSupp(v);
+                  rerender(v);
+                },
+              })
+            );
+          };
+          rerender(incSupp);
         })
         .catch((e) => {
           console.warn('[ZSS] 教材ボリューム集計失敗:', e);
@@ -459,7 +471,7 @@ async function renderAnalysisTab(
   pane.appendChild(h('div', { class: 'zss-empty' }, ['分析中…']));
   try {
     const series = await getSeriesOnce();
-    const [courses, report, hour] = await Promise.all([getCourses(), fetchReportProgresses(), getHourStats()]);
+    const [courses, report, hour, workTimes] = await Promise.all([getCourses(), fetchReportProgresses(), getHourStats(), getWorkTimes()]);
     // 14日窓シードとマージ（新規でも分析可）
     const dayMap = new Map<string, number>();
     for (const p of series) dayMap.set(p.date, p.amount);
@@ -474,6 +486,7 @@ async function renderAnalysisTab(
       distributionSummary(merged),
       weekdayTendency(merged),
       timeOfDayTendency(hour),
+      workTimeTendency(workTimes, courses),
       monthlyTendency(merged),
       holidayTendency(merged),
       consistencyTendency(merged),
