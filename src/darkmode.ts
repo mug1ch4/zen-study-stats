@@ -252,6 +252,7 @@ export async function setEnabled(on: boolean): Promise<void> {
     }
   }
   syncOurCard();
+  window.dispatchEvent(new Event('zss:themechange')); // サイドパネル等のテーマ同期用
   updateToggleIcon();
   try {
     await chrome.storage?.local.set({ [STORAGE_KEY]: on });

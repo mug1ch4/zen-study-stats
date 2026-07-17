@@ -26,8 +26,14 @@ async function getJSON<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+let mockLearning: LearningAmounts | null = null;
+/** プレビュー/テスト用。 */
+export function __setMockLearning(d: LearningAmounts): void {
+  mockLearning = d;
+}
 /** 学習数（累計 / 2週平均 / 直近14日の日別）。 */
 export function fetchLearningAmounts(): Promise<LearningAmounts> {
+  if (mockLearning) return Promise.resolve(mockLearning);
   return getJSON<LearningAmounts>('/v2/learning_amounts');
 }
 

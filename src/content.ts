@@ -6,6 +6,7 @@ import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, syncOurCard, rescanSoon, ensureToggleMounted } from './darkmode';
 import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit } from './history';
 import { ensureCourseSummary } from './summaryInject';
+import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
 
 const SETTING_PATH = '/setting';
 
@@ -44,7 +45,11 @@ function sync(): void {
   if (isSettingPath()) {
     hideOriginalNow(); // 即座に本家を隠す（フラッシュ防止）
     void ensureApplied();
-  } else removeCard();
+    removeSidePanel(); // /setting は本体カードがあるのでパネルは出さない
+  } else {
+    removeCard();
+    ensureSidePanel(); // 他ページでは端の展開パネルを設置
+  }
 }
 
 // --- SPA ルート変化の検知 ---

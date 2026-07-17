@@ -4,7 +4,8 @@ import { renderLearningCard } from '../src/ui/learningCard';
 import { __setMockHistory, __setMockMaterialHist, __setMockHour, type History } from '../src/history';
 import { __setMockVolumes } from '../src/courseStats';
 import { __setMockCourseMaterials } from '../src/courseApi';
-import { __setMockReport } from '../src/api';
+import { __setMockReport, __setMockLearning } from '../src/api';
+import { ensureSidePanel } from '../src/ui/sidePanel';
 
 // 教科別 教材（合計1500・完了320・未着手2教科）→ 教科別ボトルネック法の確認
 __setMockCourseMaterials([
@@ -114,3 +115,7 @@ document.getElementById('cardtheme')!.addEventListener('click', () => {
   dark = !dark;
   host.setAttribute('data-theme', dark ? 'dark' : 'light');
 });
+
+// サイドパネル（他ページ用の端の展開パネル）の確認: モック学習数を注入して設置
+__setMockLearning(sample);
+void ensureSidePanel();
