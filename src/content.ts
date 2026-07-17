@@ -4,10 +4,10 @@ import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } fro
 import { fetchMaterialTotals } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
-import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit } from './history';
-import { ensureCourseSummary } from './summaryInject';
+import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed } from './history';
+import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
-import { notifyRolloverSoon } from './notify';
+import { notifyRolloverSoon, notifyProgress } from './notify';
 
 const SETTING_PATH = '/setting';
 
@@ -101,19 +101,46 @@ function observeDom(): void {
   obs.observe(document.documentElement, { childList: true, subtree: true });
 }
 
-// 時間帯の傾向: サイト全体で学習中に定期サンプリング（study は講座/動画ページで行うため）。
-// 二重ゲート: (1)メモリ5分ゲートで storage 読みの頻度を抑制、(2)recordVisit 内の
-// ストレージ20分ゲートを「fetch前」に判定 → 連続リロードでも learning_amounts 取得は
-// 最大20分に1回。/setting では既取得の cache を再利用し重複取得も避ける。
+// 訪問時間帯の記録（アクセス傾向）。fetch はしない（学習の時間帯は完了検知で正確に記録）。
 let lastVisitAttempt = 0;
-async function maybeRecordVisit(): Promise<void> {
+function maybeRecordVisit(): void {
   const now = Date.now();
-  if (now - lastVisitAttempt < 5 * 60 * 1000) return; // storage読み過多を防ぐ粗いメモリゲート
+  if (now - lastVisitAttempt < 5 * 60 * 1000) return;
   lastVisitAttempt = now;
-  await recordVisit(now, async () => {
-    const la = cache ?? (await fetchLearningAmounts());
-    const today = la.daily_amount[la.daily_amount.length - 1];
-    return today?.amount ?? 0;
+  void recordVisit(now);
+}
+
+// 完了検知（observer.js が本家の完了/提出リクエストを観測 → postMessage）。
+// 【第一原則】我々は送信しない。本家の通信を"見て"反応するだけ。
+// 【誤検知対策】answerings は不合格でも発火しうる。イベントは"トリガー"に過ぎず、
+//   実際に passed 合計が増えた時だけカウント（増えていなければ＝不合格/既計上で無視）。
+let compDebounce = 0;
+function onCompletion(): void {
+  window.clearTimeout(compDebounce);
+  compDebounce = window.setTimeout(async () => {
+    try {
+      const mt = await fetchMaterialTotals(); // 実際の passed/total
+      const prev = await getLastPassed();
+      if (prev === null) {
+        await setLastPassed(mt.passed); // 初回は基準値のみ（過去分を誤カウントしない）
+        return;
+      }
+      const delta = mt.passed - prev;
+      if (delta <= 0) return; // 不合格/再提出/既計上 → 何もしない
+      await setLastPassed(mt.passed);
+      await recordCompletion(Date.now(), delta); // "その時刻"へ実カウントぶん加算（正確な時間帯）
+      await notifyProgress(mt.passed, mt.total); // 節目トースト
+      refreshSummary(); // コース/章バナーの残りを最新化
+    } catch {
+      /* ignore */
+    }
+  }, 4000);
+}
+function listenCompletions(): void {
+  window.addEventListener('message', (e) => {
+    if (e.source !== window) return;
+    const d = e.data as { __zss?: string } | null;
+    if (d && d.__zss === 'completion') onCompletion();
   });
 }
 
@@ -147,10 +174,11 @@ function startup(): void {
     }
   });
   patchHistory();
+  listenCompletions(); // 完了検知（observer.js からの通知）を購読
   window.addEventListener('zss:locationchange', onRouteChange);
   sync();
   void ensureCourseSummary();
-  void maybeRecordVisit(); // 起動時にも1回サンプリング
+  maybeRecordVisit(); // 起動時にも1回サンプリング
 }
 
 function main(): void {

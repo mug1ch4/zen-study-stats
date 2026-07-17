@@ -11,6 +11,12 @@
   "content_scripts": [
     {
       "matches": ["https://www.nnn.ed.nico/*"],
+      "js": ["observer.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.nnn.ed.nico/*"],
       "js": ["dist/content.js"],
       "run_at": "document_start"
     }

@@ -155,39 +155,61 @@ export async function maybeDailySnapshot(work: () => Promise<void>): Promise<voi
   }
 }
 
-// --- 時間帯の傾向（APIに時刻が無いため、/setting を開くたびに自前記録） ---
-// study[h]: 同一学習日内の連続訪問で増えた学習数を、後の訪問の時間(JST)に帰属（=その頃に進めた）。
-// visit[h]: その時間にサイトを開いた回数（アクセス傾向・弱い代理指標）。
-const KEY_HOUR = 'zss:hourStats'; // { study:number[24], visit:number[24], lastDay, lastAmount, lastTs }
-interface HourStore { study: number[]; visit: number[]; lastDay: string; lastAmount: number; lastTs: number }
+// --- 時間帯の傾向 ---
+// study[h]: 完了検知(observer.js が本家の完了PUTを観測→content.js)で、完了した"その時刻"に +1。
+//   ＝正確な時刻。以前の「学習数の増分を観測時刻へ帰属」は別デバイス/久々訪問で誤帰属したため廃止。
+// visit[h]: その時間にサイトを開いた回数（アクセス傾向・補助指標）。
+const KEY_HOUR = 'zss:hourStats';
+interface HourStore { study: number[]; visit: number[]; lastTs: number }
 const zeros24 = () => new Array(24).fill(0) as number[];
 function jstHour(nowMs: number): number {
   return new Date(nowMs + 9 * 3600 * 1000).getUTCHours();
 }
-/** 訪問を記録。ストレージ永続の20分ゲートを「取得前」に判定し、過剰なリクエストを防ぐ。
- *  todayAmount は遅延取得（getAmount）にし、ゲート通過時のみ fetch する（連続リロードでも取得は最大20分に1回）。 */
-export async function recordVisit(nowMs: number, getAmount: () => Promise<number>): Promise<void> {
+async function loadHour(): Promise<HourStore> {
+  const r = await chrome.storage.local.get([KEY_HOUR]);
+  return (r?.[KEY_HOUR] as HourStore) ?? { study: zeros24(), visit: zeros24(), lastTs: 0 };
+}
+/** 訪問時間帯のみ記録（学習数は取得しない＝fetch不要）。20分ゲートで冪等。 */
+export async function recordVisit(nowMs: number): Promise<void> {
   if (memOverride) return;
   try {
-    const r = await chrome.storage.local.get([KEY_HOUR]);
-    const s = (r?.[KEY_HOUR] as HourStore) ?? { study: zeros24(), visit: zeros24(), lastDay: '', lastAmount: 0, lastTs: 0 };
-    if (nowMs - (s.lastTs ?? 0) < 20 * 60 * 1000) return; // 直近20分は同一訪問扱い（fetchもしない）
-    const todayAmount = await getAmount(); // ゲート通過時のみ当日学習数を取得
-    const h = jstHour(nowMs);
-    const day = zenTodayISO(nowMs);
-    const gap = nowMs - (s.lastTs ?? 0);
-    s.visit[h] = (s.visit[h] ?? 0) + 1;
-    // 増分は「短時間(≤60分)で連続サンプルできた時」だけ現在時刻へ帰属する。
-    // 長時間ぶりの訪問だと、その学習が何時に行われたか特定できず（別デバイス/別時間帯で
-    // 進めた分が観測時刻に誤帰属される）ため、帰属せず基準値のみ更新する。
-    const MAX_ATTRIBUTE_GAP = 60 * 60 * 1000;
-    if (s.lastDay === day && todayAmount > s.lastAmount && gap <= MAX_ATTRIBUTE_GAP) {
-      s.study[h] = (s.study[h] ?? 0) + (todayAmount - s.lastAmount);
-    }
-    s.lastDay = day;
-    s.lastAmount = todayAmount;
+    const s = await loadHour();
+    if (nowMs - (s.lastTs ?? 0) < 20 * 60 * 1000) return;
+    s.visit[jstHour(nowMs)] = (s.visit[jstHour(nowMs)] ?? 0) + 1;
     s.lastTs = nowMs;
     await chrome.storage.local.set({ [KEY_HOUR]: s });
+  } catch {
+    /* ignore */
+  }
+}
+/** 完了検知時に、完了した"その時刻"へ学習を +count（時間帯 study の唯一の源・正確）。 */
+export async function recordCompletion(nowMs: number, count = 1): Promise<void> {
+  if (memOverride || count <= 0) return;
+  try {
+    const s = await loadHour();
+    s.study[jstHour(nowMs)] = (s.study[jstHour(nowMs)] ?? 0) + count;
+    await chrome.storage.local.set({ [KEY_HOUR]: s });
+  } catch {
+    /* ignore */
+  }
+}
+
+// 完了検知の"実カウント"照合用: 直近の passed_materials 合計を記憶。
+const KEY_LASTPASSED = 'zss:lastPassed';
+export async function getLastPassed(): Promise<number | null> {
+  if (memOverride) return null;
+  try {
+    const r = await chrome.storage.local.get([KEY_LASTPASSED]);
+    const v = r?.[KEY_LASTPASSED];
+    return typeof v === 'number' ? v : null;
+  } catch {
+    return null;
+  }
+}
+export async function setLastPassed(n: number): Promise<void> {
+  if (memOverride) return;
+  try {
+    await chrome.storage.local.set({ [KEY_LASTPASSED]: n });
   } catch {
     /* ignore */
   }

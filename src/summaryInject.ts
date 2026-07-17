@@ -144,3 +144,10 @@ export async function ensureCourseSummary(): Promise<void> {
     busy = false;
   }
 }
+
+/** 完了検知後などに、残りサマリのキャッシュを捨てて最新の残りを取り直す。 */
+export function refreshSummary(): void {
+  cache.clear();
+  document.getElementById(HOST_ID)?.remove();
+  void ensureCourseSummary();
+}

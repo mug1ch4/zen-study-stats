@@ -122,7 +122,7 @@ export function timeOfDayTendency(hour: { study: number[]; visit: number[] }): S
     const peak = hour.study.indexOf(Math.max(...hour.study));
     return { title: '時間帯の傾向', insights: [
       { kind: 'good', text: `学習が最も進む時間帯: 【${topRange(hour.study)}】（ピークは ${band(peak)}）。` },
-      { kind: 'note', text: '※短時間(≤60分)で連続利用した時の学習数の増分のみ反映（別デバイスや久々の訪問ぶんは誤帰属を避けて除外）。使うほど精度向上。' },
+      { kind: 'note', text: '※動画/テスト等の完了を検知した"その時刻"を記録（本家の完了通信を観測。合格して教材数が実際に増えた時のみ計上）。PCで進めたぶんが対象。' },
     ] };
   }
   if (totalVisit >= 4) {
@@ -130,7 +130,7 @@ export function timeOfDayTendency(hour: { study: number[]; visit: number[] }): S
       { kind: 'note', text: `よく ZEN Study を開くのは 【${topRange(hour.visit)}】。学習時間帯はもう少しデータが必要です。` },
     ] };
   }
-  return { title: '時間帯の傾向', insights: [{ kind: 'note', text: 'ZEN Studyを使うたびに時間帯を記録します。数回使うと傾向が出ます（APIに時刻が無いため自前計測）。' }] };
+  return { title: '時間帯の傾向', insights: [{ kind: 'note', text: 'PCで動画/テスト等を完了すると、その時刻を記録します（APIに時刻が無いため、本家の完了通信を観測して自前計測）。数回で傾向が出ます。' }] };
 }
 
 /** 必修に関するアドバイス: 残りレポート・締切・最優先コース・ペース判定。 */
