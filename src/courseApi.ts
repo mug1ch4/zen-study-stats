@@ -131,6 +131,17 @@ export async function fetchMaterialTotals(opts?: { fresh?: boolean }): Promise<{
   };
 }
 
+// 必修（basic サービス＝卒業カリキュラム）のコースID集合。学年進行で毎回更新されるため短TTL。
+// type:"advanced"（大学受験など選択）は basic 一覧に載らない＝この集合に含まれない。
+let requiredIdsCache: { at: number; ids: Set<number> } | null = null;
+export async function getRequiredCourseIds(): Promise<Set<number>> {
+  if (requiredIdsCache && Date.now() - requiredIdsCache.at < 60_000) return requiredIdsCache.ids;
+  const my = await fetchMyCourses();
+  const ids = new Set(my.map((c) => c.id));
+  requiredIdsCache = { at: Date.now(), ids };
+  return ids;
+}
+
 /** 受講中コース（id + フルタイトル）。 */
 export async function fetchMyCourses(): Promise<MyCourse[]> {
   const j = await getJSON<{ services?: { courses?: MyCourse[] }[] }>(

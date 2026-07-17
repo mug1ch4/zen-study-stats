@@ -1,12 +1,14 @@
 // コース/チャプター画面に「残り: 動画NN時間・確認テストN・レポートN」を注入。
 // 【第一原則】GETのみ・read-only。DOMは自ブラウザの描画変更のみ。
-import { fetchCourseRemaining, fetchChapterRemaining, type RemainingWork } from './courseApi';
+import { fetchCourseRemaining, fetchChapterRemaining, getRequiredCourseIds, type RemainingWork } from './courseApi';
 import { durationStr } from './format';
 import { h } from './dom';
 
 const HOST_ID = 'zss-summary-host';
 // key → 集計結果。null = 取得失敗（★二度と再取得しない＝リクエストストーム防止）。
 const cache = new Map<string, RemainingWork | null>();
+// 必修以外（type:advanced／大学受験など）と判定したキー。重い集計をせず軽いラベルのみ出す。
+const electiveKeys = new Set<string>();
 // key → 再注入回数。React がホストを消し続けるページで無限に注入し直すのを防ぐ上限。
 const mountCount = new Map<string, number>();
 const MOUNT_CAP = 8;
@@ -60,6 +62,18 @@ function bannerBox(): HTMLElement {
 function fillPlaceholder(box: HTMLElement): void {
   box.textContent = '残りを集計中…';
   box.style.opacity = '0.7';
+}
+
+/** 必修以外（大学受験など選択）: 重い集計はせず、卒業要件外である旨だけ明示する。 */
+function fillElective(box: HTMLElement): void {
+  const dark = document.documentElement.classList.contains('zss-dark');
+  const sub = dark ? '#9aa6b2' : '#4a6072';
+  box.style.opacity = '1';
+  box.textContent = '';
+  box.append(
+    h('span', {}, ['選択科目（大学受験・発展など）']),
+    (() => { const e = h('span', {}, ['　·　卒業要件・必修の進捗には含まれません']); e.style.color = sub; return e; })()
+  );
 }
 
 function fillBanner(box: HTMLElement, r: RemainingWork, kind: 'course' | 'chapter'): void {
@@ -128,20 +142,31 @@ export async function ensureCourseSummary(): Promise<void> {
     existing.remove(); // 別ページのが残っている → 撤去
   }
 
+  // 再注入の共通ガード（React がホストを消し続けるページでの暴走防止）
+  const remount = (render: (box: HTMLElement) => void): void => {
+    const n = mountCount.get(info.key) ?? 0;
+    if (n >= MOUNT_CAP) return;
+    const spot = findSpot(info);
+    if (!spot) return;
+    mountCount.set(info.key, n + 1);
+    render(mountHost(spot, info).box);
+  };
+
+  // --- 必修以外（大学受験など）: 重い集計をせず軽ラベルのみ（判定済みキー） ---
+  if (electiveKeys.has(info.key)) {
+    remount(fillElective);
+    return;
+  }
+
   // --- データ既知（成功 or 失敗）: fetch せず描画のみ。ここが storm を根絶する。 ---
   if (cache.has(info.key)) {
     const rem = cache.get(info.key) ?? null;
     if (rem === null) return; // 取得失敗のキー → 何も出さない（プレースホルダも出さず点滅しない）
-    const n = mountCount.get(info.key) ?? 0;
-    if (n >= MOUNT_CAP) return; // React が消し続けるページでの無限再注入を打ち切る
-    const spot = findSpot(info);
-    if (!spot) return;
-    mountCount.set(info.key, n + 1);
-    fillBanner(mountHost(spot, info).box, rem, info.kind);
+    remount((box) => fillBanner(box, rem, info.kind));
     return;
   }
 
-  // --- 未知キー: 1回だけ取得（busy で直列化） ---
+  // --- 未知キー: 1回だけ処理（busy で直列化） ---
   if (busy) return;
   const spot = findSpot(info);
   if (!spot) return;
@@ -150,6 +175,15 @@ export async function ensureCourseSummary(): Promise<void> {
   fillPlaceholder(box);
   mountCount.set(info.key, (mountCount.get(info.key) ?? 0) + 1);
   try {
+    // カテゴリ判定: 必修（basic サービス）でなければ重い集計をスキップして軽ラベルに。
+    // 判定に失敗（取得不可）した場合は従来どおり必修扱いで集計する（安全側）。
+    const requiredIds = await getRequiredCourseIds().catch(() => null);
+    if (requiredIds && !requiredIds.has(info.courseId)) {
+      electiveKeys.add(info.key);
+      if (pathInfo()?.key === info.key && document.getElementById(HOST_ID) === host) fillElective(box);
+      else host.remove();
+      return;
+    }
     const rem =
       info.kind === 'chapter'
         ? await fetchChapterRemaining(info.courseId, info.chapterId!)
@@ -171,6 +205,7 @@ export async function ensureCourseSummary(): Promise<void> {
 /** 完了検知後などに、残りサマリのキャッシュを捨てて最新の残りを取り直す。 */
 export function refreshSummary(): void {
   cache.clear();
+  electiveKeys.clear();
   mountCount.clear();
   document.getElementById(HOST_ID)?.remove();
   void ensureCourseSummary();

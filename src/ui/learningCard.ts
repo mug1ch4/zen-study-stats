@@ -353,8 +353,15 @@ async function renderPredictTab(
       for (let i = 1; i < mh.series.length; i++) {
         const prev = mh.series[i - 1];
         const cur = mh.series[i];
+        // 【頑健フォールバック】必修コースが年度で入替わると passed/total が不連続に変化する。
+        // その区間の差分は「学習量」ではないのでサンプルから除外する。構造を仮定せず、次の
+        // どれかに当てはまれば捨てる（検知ではなく防御）:
+        //   (a) total が変化した（記録がある場合）＝コースセットが変わった
+        //   (b) passed が減少した＝科目リセット/入替（total未記録の旧データでも効く）
+        if (prev.total !== undefined && cur.total !== undefined && prev.total !== cur.total) continue;
+        if (cur.passed < prev.passed) continue;
         const gap = Math.max(1, Math.round((new Date(cur.date).getTime() - new Date(prev.date).getTime()) / 86400000));
-        dailySamples.push({ weekday: new Date(cur.date + 'T12:00:00').getDay(), value: Math.max(0, (cur.passed - prev.passed) / gap) });
+        dailySamples.push({ weekday: new Date(cur.date + 'T12:00:00').getDay(), value: (cur.passed - prev.passed) / gap });
       }
     } else {
       dailySamples = merged.map((p) => ({ weekday: new Date(p.date + 'T12:00:00').getDay(), value: p.amount }));

@@ -96,6 +96,7 @@ export function __setMockReportHist(h: History): void {
 // --- 教材消化（passed_materials）の履歴 ---
 const KEY_MATHIST = 'zss:materialHist'; // { "YYYY-MM-DD": passed }
 const KEY_MATTOTAL = 'zss:materialTotal'; // 最新 total
+const KEY_MATTOTHIST = 'zss:materialTotalHist'; // { "YYYY-MM-DD": total } 学年ロールオーバー検知用
 
 let mockMatHist: History | null = null;
 let mockMatTotal: number | null = null;
@@ -104,14 +105,16 @@ export function __setMockMaterialHist(h: History, total: number): void {
   mockMatTotal = total;
 }
 
-/** 教材消化の累計(passed)と総数(total)を今日の値として記録。 */
+/** 教材消化の累計(passed)と総数(total)を今日の値として記録。total も日付別に残す。 */
 export async function snapshotMaterials(passed: number, total: number): Promise<void> {
   if (mockMatHist) return;
   try {
-    const r = await chrome.storage.local.get([KEY_MATHIST]);
+    const r = await chrome.storage.local.get([KEY_MATHIST, KEY_MATTOTHIST]);
     const h = (r?.[KEY_MATHIST] as History) ?? {};
+    const th = (r?.[KEY_MATTOTHIST] as History) ?? {};
     h[todayISO()] = passed;
-    await chrome.storage.local.set({ [KEY_MATHIST]: h, [KEY_MATTOTAL]: total });
+    th[todayISO()] = total;
+    await chrome.storage.local.set({ [KEY_MATHIST]: h, [KEY_MATTOTAL]: total, [KEY_MATTOTHIST]: th });
   } catch {
     /* ignore */
   }
@@ -305,8 +308,8 @@ export async function recordAchievements(ids: string[]): Promise<void> {
   }
 }
 
-/** 教材消化履歴（日付昇順）＋最新total。 */
-export async function getMaterialHistory(): Promise<{ series: { date: string; passed: number }[]; total: number }> {
+/** 教材消化履歴（日付昇順）＋最新total。各点にその日の total（あれば）も付与＝学年ロールオーバー検知用。 */
+export async function getMaterialHistory(): Promise<{ series: { date: string; passed: number; total?: number }[]; total: number }> {
   if (mockMatHist) {
     return {
       series: Object.keys(mockMatHist).sort().map((date) => ({ date, passed: mockMatHist![date] })),
@@ -314,10 +317,11 @@ export async function getMaterialHistory(): Promise<{ series: { date: string; pa
     };
   }
   try {
-    const r = await chrome.storage.local.get([KEY_MATHIST, KEY_MATTOTAL]);
+    const r = await chrome.storage.local.get([KEY_MATHIST, KEY_MATTOTAL, KEY_MATTOTHIST]);
     const h = (r?.[KEY_MATHIST] as History) ?? {};
+    const th = (r?.[KEY_MATTOTHIST] as History) ?? {};
     return {
-      series: Object.keys(h).sort().map((date) => ({ date, passed: h[date] })),
+      series: Object.keys(h).sort().map((date) => ({ date, passed: h[date], total: th[date] })),
       total: (r?.[KEY_MATTOTAL] as number) ?? 0,
     };
   } catch {

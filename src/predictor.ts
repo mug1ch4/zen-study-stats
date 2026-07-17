@@ -36,6 +36,7 @@ function projectCurve(remaining: number, perDay: number, weights: number[], toda
 export interface PacePoint {
   date: string;
   passed: number; // その日時点の passed_materials 累計
+  total?: number; // その日時点の total_materials（学年で必修が増えると変化＝ロールオーバー検知）
 }
 
 export interface PredInput {
