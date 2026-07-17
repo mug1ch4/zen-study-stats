@@ -126,9 +126,10 @@ function onCompletion(): void {
         return;
       }
       const delta = mt.passed - prev;
-      if (delta <= 0) return; // 不合格/再提出/既計上 → 何もしない
+      if (delta <= 0) return; // 不合格/再提出/既計上 → 何もしない（＝ここより下流は"確定分"だけ）
       await setLastPassed(mt.passed);
       await recordCompletion(Date.now(), delta); // "その時刻"へ実カウントぶん加算（正確な時間帯）
+      window.dispatchEvent(new Event('zss:hourupdate')); // 開いているカードの時間帯トレンドをライブ更新
       await notifyProgress(mt.passed, mt.total); // 節目トースト
       refreshSummary(); // コース/章バナーの残りを最新化
     } catch {

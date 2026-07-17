@@ -197,14 +197,24 @@ async function renderRecentTab(
     ])
   );
 
-  // 時間帯トレンド（自前計測 hourStats）
-  const hour = await getHourStats();
-  const totalHour = hour.study.reduce((a, b) => a + b, 0);
-  longWrap.appendChild(
-    totalHour > 0
-      ? sectionEl('時間帯トレンド', '学習が進む時間帯（自前計測・使うほど精緻化）', [wrapChart(renderHourBars(hour.study, tip))])
-      : sectionEl('時間帯トレンド', '自前計測', [h('div', { class: 'zss-empty' }, ['ZEN Studyを使うたびに時間帯を記録します（APIに時刻が無いため。数回で傾向が出ます）。'])])
-  );
+  // 時間帯トレンド（完了検知でライブ更新: content.ts が確定分の下流で zss:hourupdate を発火）
+  const hourWrap = h('div', {}, []);
+  longWrap.appendChild(hourWrap);
+  const renderHour = async (): Promise<void> => {
+    const hs = await getHourStats();
+    hourWrap.textContent = '';
+    hourWrap.appendChild(
+      hs.study.reduce((a, b) => a + b, 0) > 0
+        ? sectionEl('時間帯トレンド', '学習が進む時間帯（完了検知でその時刻を記録・自動更新）', [wrapChart(renderHourBars(hs.study, tip))])
+        : sectionEl('時間帯トレンド', '自前計測', [h('div', { class: 'zss-empty' }, ['PCで動画/テスト等を完了すると、その時刻を記録します（数回で傾向が出ます）。'])])
+    );
+  };
+  await renderHour();
+  const onHourUpdate = (): void => {
+    if (hourWrap.isConnected) void renderHour();
+    else window.removeEventListener('zss:hourupdate', onHourUpdate); // カード破棄後は自動解除
+  };
+  window.addEventListener('zss:hourupdate', onHourUpdate);
 }
 
 /** 予測タブ: 年度レポート完了予測（モンテカルロ）。 */
