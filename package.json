@@ -1,0 +1,20 @@
+{
+  "name": "zen-study-stats",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZEN Study の自分の学習データを見やすく可視化する個人用ブラウザ拡張（表示専用・read-only / GETのみ）",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2"
+  },
+  "dependencies": {
+    "uplot": "^1.6.31"
+  }
+}

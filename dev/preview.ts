@@ -1,0 +1,108 @@
+import type { LearningAmounts } from '../src/api';
+import { CSS } from '../src/styles';
+import { renderLearningCard } from '../src/ui/learningCard';
+import { __setMockHistory, __setMockMaterialHist, type History } from '../src/history';
+import { __setMockVolumes } from '../src/courseStats';
+import { __setMockCourseMaterials } from '../src/courseApi';
+import { __setMockReport } from '../src/api';
+
+// 教科別 教材（合計1500・完了320・未着手2教科）→ 教科別ボトルネック法の確認
+__setMockCourseMaterials([
+  { id: 1, title: '英語コミュニケーションⅢ', total: 400, passed: 250 },
+  { id: 2, title: '数学Ⅲ', total: 350, passed: 60 },
+  { id: 3, title: '物理', total: 300, passed: 10 },
+  { id: 4, title: '情報Ⅱ', total: 250, passed: 0 },
+  { id: 5, title: '論理・表現Ⅲ', total: 200, passed: 0 },
+]);
+
+// 初回想定: 教材履歴はまだ空（total=1500だけ既知）。→ 直近の学習活動を暫定ペースに使う経路を確認。
+__setMockMaterialHist({}, 1500);
+
+// レポート完了予測のモック（合計50・完了20・残30、締切12/15）
+__setMockReport({
+  finalDeadline: '2026-12-15T23:59:59+09:00',
+  months: [
+    { year: 2026, month: 6, deadline: '2026-06-15T23:59:59+09:00', total: 6, passed: 6 },
+    { year: 2026, month: 7, deadline: '2026-07-15T23:59:59+09:00', total: 7, passed: 5 },
+    { year: 2026, month: 8, deadline: '2026-08-15T23:59:59+09:00', total: 10, passed: 4 },
+    { year: 2026, month: 9, deadline: '2026-09-15T23:59:59+09:00', total: 5, passed: 2 },
+    { year: 2026, month: 10, deadline: '2026-10-15T23:59:59+09:00', total: 8, passed: 2 },
+    { year: 2026, month: 11, deadline: '2026-11-15T23:59:59+09:00', total: 8, passed: 1 },
+    { year: 2026, month: 12, deadline: '2026-12-15T23:59:59+09:00', total: 6, passed: 0 },
+  ],
+  totalReports: 50,
+  passedReports: 20,
+});
+
+// モックのコースボリューム（教科ティアB＝残/総の確認用）
+const met = (ms: number, mc: number, t: number, r: number) => ({ movieSeconds: ms, movieCount: mc, testCount: t, reportCount: r });
+__setMockVolumes([
+  { id: 1, title: '英語コミュニケーションⅢ', total: met(41876, 163, 72, 24), remaining: met(17932, 64, 24, 8), totalMaterials: 400, passedMaterials: 250, totalChapters: 12, passedChapters: 7,
+    chapters: [
+      { id: 1, title: '第1回　Gifts to Barcelona', total: met(1200, 8, 6, 2), remaining: met(0, 0, 0, 0), passed: 19, totalCount: 19 },
+      { id: 2, title: '第7回　Terracotta Warriors', total: met(3067, 13, 6, 2), remaining: met(1400, 6, 3, 1), passed: 15, totalCount: 21 },
+    ] },
+  { id: 2, title: '数学Ⅲ', total: met(28800, 120, 60, 20), remaining: met(24000, 100, 50, 17), totalMaterials: 350, passedMaterials: 60, totalChapters: 9, passedChapters: 1,
+    chapters: [{ id: 3, title: '第1回', total: met(2400, 10, 6, 2), remaining: met(2000, 8, 5, 2), passed: 2, totalCount: 24 }] },
+  { id: 4, title: '情報Ⅱ', total: met(18000, 80, 40, 12), remaining: met(18000, 80, 40, 12), totalMaterials: 250, passedMaterials: 0, totalChapters: 4, passedChapters: 0,
+    chapters: [{ id: 4, title: '第1回　情報社会', total: met(3100, 13, 6, 2), remaining: met(3100, 13, 6, 2), passed: 0, totalCount: 21 }] },
+]);
+
+// モック履歴（約50日）を注入して M2(カレンダー/トレンド/ストリーク) を埋める
+function mockHistory(): History {
+  const h: History = {};
+  const today = new Date();
+  for (let i = 49; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const p = (n: number) => String(n).padStart(2, '0');
+    const iso = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    // 週末は少なめ・たまに0/欠損、で “それっぽい” 値
+    const wd = d.getDay();
+    if (i % 11 === 3) continue; // 欠損日
+    const base = wd === 0 || wd === 6 ? 8 : 22;
+    h[iso] = Math.max(0, Math.round(base + Math.sin(i / 3) * 12 + (i % 7) * 2 - 6));
+  }
+  return h;
+}
+__setMockHistory(mockHistory());
+
+const sample: LearningAmounts = {
+  total_amount: 230,
+  average_amount: 20.9,
+  daily_amount: [
+    { date: '2026-07-04', amount: null },
+    { date: '2026-07-05', amount: null },
+    { date: '2026-07-06', amount: 18 },
+    { date: '2026-07-07', amount: 6 },
+    { date: '2026-07-08', amount: 4 },
+    { date: '2026-07-09', amount: 0 },
+    { date: '2026-07-10', amount: 23 },
+    { date: '2026-07-11', amount: 26 },
+    { date: '2026-07-12', amount: 16 },
+    { date: '2026-07-13', amount: 38 },
+    { date: '2026-07-14', amount: 21 },
+    { date: '2026-07-15', amount: 46 },
+    { date: '2026-07-16', amount: 28 },
+    { date: '2026-07-17', amount: 4 },
+  ],
+};
+
+const mount = document.getElementById('mount')!;
+const host = document.createElement('div');
+const root = host.attachShadow({ mode: 'open' });
+const style = document.createElement('style');
+style.textContent = CSS;
+root.appendChild(style);
+root.appendChild(renderLearningCard(sample));
+mount.appendChild(host);
+
+// トグル
+document.getElementById('toggle')!.addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+});
+let dark = false;
+document.getElementById('cardtheme')!.addEventListener('click', () => {
+  dark = !dark;
+  host.setAttribute('data-theme', dark ? 'dark' : 'light');
+});

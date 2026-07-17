@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ZSS 学習数カード プレビュー</title>
+    <style>
+      body { margin: 0; font-family: sans-serif; background: #eef1f5; transition: background .2s; }
+      body.dark { background: #0b0e13; }
+      .bar { padding: 12px 16px; display: flex; gap: 10px; align-items: center; }
+      .bar button { padding: 6px 12px; border-radius: 8px; border: 1px solid #ccc; cursor: pointer; background: #fff; }
+      .stage { padding: 24px 16px; display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+      .slot { width: 460px; max-width: 100%; }
+      .slot h3 { font: 600 12px sans-serif; color: #888; margin: 0 0 8px; }
+      body.dark .bar button { background: #1a2129; color: #ddd; border-color: #333; }
+      body.dark .slot h3 { color: #7a8694; }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <strong style="font:700 13px sans-serif">学習数カード プレビュー</strong>
+      <button id="toggle">ページ背景 light/dark</button>
+      <button id="cardtheme">カード theme 切替</button>
+    </div>
+    <div class="stage">
+      <div class="slot"><h3>/setting のカード幅想定 (460px)</h3><div id="mount"></div></div>
+    </div>
+    <script type="module" src="./preview.ts"></script>
+  </body>
+</html>

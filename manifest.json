@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "ZEN Study 学習統計 (個人用)",
+  "version": "0.1.0",
+  "description": "自分のZEN Study学習データを見やすく可視化する表示専用ツール。read-only / GETのみ。学習記録は一切変更しません。",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://api.nnn.ed.nico/*",
+    "https://www.nnn.ed.nico/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.nnn.ed.nico/*"],
+      "js": ["dist/content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

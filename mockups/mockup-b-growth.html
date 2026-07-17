@@ -1,0 +1,655 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZEN Study 学習数 — 成長ダッシュボード（方針B）</title>
+<style>
+  /* ============================================================
+     Palette — dataviz reference instance (validated).
+     Sequential single-hue = BLUE. Magnitude ramp validated as an
+     ordinal ramp in light & dark (scripts/validate_palette.js):
+       light: #86b6ef,#5598e7,#2a78d6,#184f95  → ALL PASS
+       dark : #184f95,#256abf,#3987e5,#86b6ef  → ALL PASS
+     Categorical hues are NOT used — 学習数 is a single magnitude series.
+     ============================================================ */
+  :root {
+    color-scheme: light dark;
+    --page:            #f9f9f7;
+    --surface-1:       #fcfcfb;
+    --surface-2:       #ffffff;
+    --text-primary:    #0b0b0b;
+    --text-secondary:  #52514e;
+    --text-muted:      #898781;
+    --grid:            #e1e0d9;
+    --baseline:        #c3c2b7;
+    --border:          rgba(11,11,11,0.10);
+    --series-1:        #2a78d6;   /* accent: trend line, current period */
+    --series-1-soft:   rgba(42,120,214,0.12);
+    --good:            #006300;
+    /* heatmap states */
+    --cell-empty:      #e8e7e1;   /* 未記録 (neutral gray) */
+    --cell-future:     #f1f0eb;   /* 未来 ghost fill */
+    --cell-future-stroke: #d8d7d0;
+    --cell-zero:       #dbeafd;   /* 記録あり・0 (faint blue tint) */
+    --b1:              #86b6ef;
+    --b2:              #5598e7;
+    --b3:              #2a78d6;
+    --b4:              #184f95;
+    --cell-ink:        #ffffff;   /* label on dark cells */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:           #0d0d0d;
+      --surface-1:      #1a1a19;
+      --surface-2:      #212120;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --series-1-soft:  rgba(57,135,229,0.16);
+      --good:           #0ca30c;
+      --cell-empty:     #313130;
+      --cell-future:    #242423;
+      --cell-future-stroke: #3a3a38;
+      --cell-zero:      #10305a;
+      --b1:             #184f95;
+      --b2:             #256abf;
+      --b3:             #3987e5;
+      --b4:             #86b6ef;
+      --cell-ink:       #06122a;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:           #0d0d0d;
+    --surface-1:      #1a1a19;
+    --surface-2:      #212120;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:           #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #3987e5;
+    --series-1-soft:  rgba(57,135,229,0.16);
+    --good:           #0ca30c;
+    --cell-empty:     #313130;
+    --cell-future:    #242423;
+    --cell-future-stroke: #3a3a38;
+    --cell-zero:      #10305a;
+    --b1:             #184f95;
+    --b2:             #256abf;
+    --b3:             #3987e5;
+    --b4:             #86b6ef;
+    --cell-ink:       #06122a;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding: 24px 16px 64px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  /* header */
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .head h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+  .head .sub { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
+  .recording {
+    display: inline-flex; align-items: center; gap: 7px;
+    margin-top: 10px; padding: 5px 11px; border-radius: 999px;
+    background: var(--series-1-soft); color: var(--series-1);
+    font-size: 12.5px; font-weight: 600;
+  }
+  .recording .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--series-1); box-shadow: 0 0 0 3px var(--series-1-soft); }
+
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .theme-btn {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+    border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .theme-btn:hover { color: var(--text-primary); }
+
+  /* segmented control */
+  .seg { display: inline-flex; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg button {
+    border: 0; background: transparent; color: var(--text-secondary);
+    font-family: inherit; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .seg button[aria-pressed="true"] { background: var(--series-1); color: #fff; }
+  :root[data-theme="dark"] .seg button[aria-pressed="true"],
+  :root:where(:not([data-theme="light"])) .seg button[aria-pressed="true"] { color: #06122a; }
+
+  .state-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 22px 0 4px; }
+  .state-note { color: var(--text-muted); font-size: 12.5px; }
+
+  /* cards */
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px; margin-top: 16px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 2px; }
+  .card .cap { color: var(--text-muted); font-size: 12px; margin: 0 0 14px; }
+
+  /* KPI tiles */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+  @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 15px 16px; }
+  .tile .label { color: var(--text-secondary); font-size: 12px; }
+  .tile .value { font-size: 30px; font-weight: 650; letter-spacing: -.5px; margin-top: 6px; line-height: 1.1; }
+  .tile .value .unit { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-left: 3px; }
+  .tile .delta { font-size: 12px; margin-top: 6px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+  .tile .delta.good { color: var(--good); }
+  .flame { font-size: 13px; }
+  .streak-dots { display: flex; gap: 3px; margin-top: 8px; }
+  .streak-dots span { width: 9px; height: 9px; border-radius: 2px; background: var(--cell-empty); }
+  .streak-dots span.on { background: var(--b3); }
+  .streak-dots span.today { outline: 2px solid var(--series-1); outline-offset: 1px; }
+
+  /* heatmap */
+  .heat-scroll { overflow-x: auto; padding-bottom: 6px; }
+  .heat-svg { display: block; }
+  .heat-cell { rx: 2.5px; cursor: pointer; }
+  .month-label { fill: var(--text-muted); font-size: 10px; }
+  .wd-label { fill: var(--text-muted); font-size: 9.5px; }
+
+  .legend { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-size: 11.5px; color: var(--text-secondary); }
+  .legend .scale { display: flex; align-items: center; gap: 6px; }
+  .legend .swatches { display: flex; gap: 3px; }
+  .legend .sw { width: 13px; height: 13px; border-radius: 2.5px; }
+  .legend .key { display: flex; align-items: center; gap: 6px; }
+  .legend .keybox { width: 13px; height: 13px; border-radius: 2.5px; border: 1px solid var(--border); }
+
+  /* trend */
+  .trend-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .trend-legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); align-items: center; flex-wrap: wrap; }
+  .trend-legend .k { display: inline-flex; align-items: center; gap: 6px; }
+  .trend-legend .ln { width: 18px; height: 0; border-top: 2px solid var(--series-1); }
+  .trend-legend .ln.avg { border-top: 2px dashed var(--text-muted); }
+  .trend-svg { display: block; width: 100%; height: auto; margin-top: 12px; }
+  .seg.small button { padding: 5px 11px; font-size: 12px; }
+
+  .foot { color: var(--text-muted); font-size: 11.5px; margin-top: 20px; text-align: center; }
+
+  /* tooltip */
+  #tip {
+    position: fixed; pointer-events: none; z-index: 50; opacity: 0; transform: translateY(-4px);
+    transition: opacity .1s; background: var(--surface-2); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 9px; padding: 8px 11px; font-size: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18); max-width: 220px;
+  }
+  #tip .t-date { color: var(--text-muted); font-size: 11px; margin-bottom: 2px; }
+  #tip .t-val { font-weight: 650; font-size: 14px; }
+  #tip .t-tag { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+
+  /* table (a11y fallback) */
+  details.tableview { margin-top: 14px; }
+  details.tableview summary { cursor: pointer; font-size: 12.5px; color: var(--series-1); }
+  table.data { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+  table.data th, table.data td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+  table.data th:first-child, table.data td:first-child { text-align: left; }
+  table.data thead th { color: var(--text-secondary); font-weight: 600; }
+  .visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+</style>
+
+<div class="wrap">
+  <div class="head">
+    <div>
+      <h1>学習数</h1>
+      <div class="sub">ZEN Study · 毎日1回スナップショットを保存して長期の記録を育てます</div>
+      <div class="recording"><span class="dot"></span><span id="recording-label">記録中</span></div>
+    </div>
+    <div class="toolbar">
+      <button class="theme-btn" id="theme-toggle" type="button" aria-label="配色を切り替え">◐ テーマ</button>
+    </div>
+  </div>
+
+  <div class="state-row">
+    <div class="seg" role="group" aria-label="表示する期間">
+      <button id="btn-now" type="button" aria-pressed="true">現在（14日）</button>
+      <button id="btn-future" type="button" aria-pressed="false">3ヶ月後（予測）</button>
+    </div>
+    <div class="state-note" id="state-note"></div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpis">
+    <div class="tile">
+      <div class="label">累計学習数</div>
+      <div class="value" id="kpi-total">230<span class="unit">問</span></div>
+      <div class="delta" id="kpi-total-d">2週間の合計</div>
+    </div>
+    <div class="tile">
+      <div class="label">2週平均 / 日</div>
+      <div class="value" id="kpi-avg">20.9<span class="unit">問</span></div>
+      <div class="delta">直近14日</div>
+    </div>
+    <div class="tile">
+      <div class="label">現在のストリーク</div>
+      <div class="value" id="kpi-streak">8<span class="unit">日</span></div>
+      <div class="delta good"><span class="flame">🔥</span><span id="kpi-streak-d">継続中</span></div>
+    </div>
+    <div class="tile">
+      <div class="label">直近14日の学習</div>
+      <div class="value" id="kpi-active">12<span class="unit">/14日</span></div>
+      <div class="streak-dots" id="streak-dots" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <!-- Heatmap -->
+  <div class="card">
+    <h2>学習カレンダー</h2>
+    <p class="cap" id="heat-cap">記録が増えるほど濃く埋まります。灰=未記録／点線=未来（これから）／青=学習数</p>
+    <div class="heat-scroll">
+      <svg class="heat-svg" id="heat" role="img" aria-label="日別の学習数を示すカレンダーヒートマップ"></svg>
+    </div>
+    <div class="legend">
+      <div class="scale">
+        <span>少</span>
+        <div class="swatches">
+          <span class="sw" style="background:var(--cell-zero)"></span>
+          <span class="sw" style="background:var(--b1)"></span>
+          <span class="sw" style="background:var(--b2)"></span>
+          <span class="sw" style="background:var(--b3)"></span>
+          <span class="sw" style="background:var(--b4)"></span>
+        </div>
+        <span>多</span>
+      </div>
+      <div class="key"><span class="keybox" style="background:var(--cell-empty)"></span>未記録</div>
+      <div class="key"><span class="keybox" style="background:var(--cell-future);border-style:dashed;border-color:var(--cell-future-stroke)"></span>未来（これから）</div>
+    </div>
+  </div>
+
+  <!-- Trend -->
+  <div class="card">
+    <div class="trend-head">
+      <div>
+        <h2>学習数トレンド</h2>
+        <p class="cap" style="margin-bottom:0">日次の学習数と7日移動平均</p>
+      </div>
+      <div class="seg small" role="group" aria-label="集計の粒度">
+        <button data-gran="day" type="button" aria-pressed="true">日</button>
+        <button data-gran="week" type="button" aria-pressed="false">週</button>
+        <button data-gran="month" type="button" aria-pressed="false">月</button>
+      </div>
+    </div>
+    <div class="trend-legend" style="margin-top:10px" id="trend-legend">
+      <span class="k"><span class="ln"></span>学習数</span>
+      <span class="k"><span class="ln avg"></span>7日移動平均</span>
+    </div>
+    <svg class="trend-svg" id="trend" role="img" aria-label="学習数の時系列トレンド"></svg>
+    <div class="state-note" id="gran-note" style="margin-top:8px"></div>
+
+    <details class="tableview">
+      <summary>データを表で見る</summary>
+      <div style="overflow-x:auto">
+        <table class="data" id="data-table">
+          <thead><tr><th>日付</th><th>曜日</th><th>学習数</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+
+  <div class="foot">方針B（Growth-first）モックアップ · 未来分は半透明のダミー予測 · read-only 可視化</div>
+</div>
+
+<div id="tip" role="tooltip"></div>
+
+<script>
+"use strict";
+/* ---------------- seed data (14日) ---------------- */
+const SEED = {
+  total_amount: 230, average_amount: 20.9,
+  daily_amount: [
+    {date:"2026-07-04",amount:null},{date:"2026-07-05",amount:null},
+    {date:"2026-07-06",amount:18},{date:"2026-07-07",amount:6},
+    {date:"2026-07-08",amount:4},{date:"2026-07-09",amount:0},
+    {date:"2026-07-10",amount:23},{date:"2026-07-11",amount:26},
+    {date:"2026-07-12",amount:16},{date:"2026-07-13",amount:38},
+    {date:"2026-07-14",amount:21},{date:"2026-07-15",amount:46},
+    {date:"2026-07-16",amount:28},{date:"2026-07-17",amount:4}
+  ]
+};
+const TRACK_START = "2026-07-04";
+const TODAY = "2026-07-17";
+const WD = ["日","月","火","水","木","金","土"];
+
+/* ---------------- date helpers (local, no TZ drift) ---------------- */
+const pd = s => { const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); };
+const key = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+const addDays = (dt,n)=>{ const x=new Date(dt); x.setDate(x.getDate()+n); return x; };
+const fmtJ = s => { const d=pd(s); return `${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`; };
+
+/* map of real data */
+const real = new Map(SEED.daily_amount.map(o=>[o.date,o.amount]));
+
+/* ---------------- seeded PRNG for dummy future ---------------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const rnd = mulberry32(20260717);
+/* generate plausible dummy values for TODAY+1 .. +90 */
+const future = new Map();
+(function(){
+  let cur = addDays(pd(TODAY),1); const end = addDays(pd(TODAY),90);
+  while(cur<=end){
+    const wd = cur.getDay();
+    const weekend = (wd===0||wd===6);
+    const r = rnd();
+    let v;
+    if(r<0.14) v = 0;                             // rest day
+    else if(r<0.22) v = null;                     // occasional missed snapshot
+    else {
+      const base = weekend ? 10 : 24;
+      v = Math.max(0, Math.round(base + (rnd()-0.4)*30));
+    }
+    future.set(key(cur), v);
+    cur = addDays(cur,1);
+  }
+})();
+
+/* ---------------- bucket / class for a cell ---------------- */
+function cellClass(dateStr, mode){
+  const isFuture = pd(dateStr) > pd(TODAY);
+  const beforeTrack = pd(dateStr) < pd(TRACK_START);
+  let amount, projected=false;
+  if(isFuture){
+    if(mode==="future" && future.has(dateStr)){ amount = future.get(dateStr); projected=true; }
+    else return {state:"future", amount:null, projected:false};
+  } else if(beforeTrack){
+    return {state:"pretrack", amount:null, projected:false};
+  } else {
+    amount = real.has(dateStr) ? real.get(dateStr) : null;
+  }
+  if(amount===null) return {state:"empty", amount:null, projected};
+  let b;
+  if(amount===0) b="zero";
+  else if(amount<=7) b="b1";
+  else if(amount<=17) b="b2";
+  else if(amount<=29) b="b3";
+  else b="b4";
+  return {state:b, amount, projected};
+}
+const FILL = {
+  future:"var(--cell-future)", pretrack:"var(--cell-empty)", empty:"var(--cell-empty)",
+  zero:"var(--cell-zero)", b1:"var(--b1)", b2:"var(--b2)", b3:"var(--b3)", b4:"var(--b4)"
+};
+
+/* ---------------- state ---------------- */
+let MODE = "now";          // now | future
+let GRAN = "day";          // day | week | month
+const SVGNS = "http://www.w3.org/2000/svg";
+const el = (n,a={})=>{const e=document.createElementNS(SVGNS,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+/* ---------------- KPIs ---------------- */
+function computeStreak(){
+  // consecutive days amount>0 ending at last recorded day
+  const days = SEED.daily_amount.filter(o=>o.amount!==null);
+  let s=0;
+  for(let i=days.length-1;i>=0;i--){ if(days[i].amount>0) s++; else break; }
+  return s;
+}
+function renderKPIs(){
+  document.getElementById("kpi-streak").innerHTML = computeStreak()+'<span class="unit">日</span>';
+  const active = SEED.daily_amount.filter(o=>o.amount!==null && o.amount>0).length;
+  document.getElementById("kpi-active").innerHTML = active+'<span class="unit">/14日</span>';
+  // streak dots: last 14 days
+  const dots = document.getElementById("streak-dots"); dots.innerHTML="";
+  SEED.daily_amount.forEach(o=>{
+    const s=document.createElement("span");
+    if(o.amount!==null && o.amount>0) s.classList.add("on");
+    if(o.date===TODAY) s.classList.add("today");
+    dots.appendChild(s);
+  });
+}
+
+/* ---------------- recording badge / notes ---------------- */
+function daysSince(a,b){ return Math.round((pd(b)-pd(a))/86400000)+1; }
+function renderMeta(){
+  const n = daysSince(TRACK_START, TODAY);
+  document.getElementById("recording-label").textContent = `2026年7月4日から記録中 · ${n}日目`;
+  document.getElementById("state-note").textContent =
+    MODE==="now"
+      ? "いまは種となる14日分。日が経つほどカレンダーとトレンドが埋まります。"
+      : "記録を90日続けた想定。半透明のセル／点は予測ダミーです。";
+  document.getElementById("heat-cap").textContent =
+    MODE==="now"
+      ? "記録が増えるほど濃く埋まります。点線＝これから記録される日。"
+      : "3ヶ月後のイメージ。半透明＝予測ダミー、濃い青ほど学習数が多い日。";
+}
+
+/* ---------------- HEATMAP ---------------- */
+const CELL=15, GAP=4, TOP=22, LEFT=26;
+function weekStartMonday(dt){ const x=new Date(dt); const day=(x.getDay()+6)%7; return addDays(x,-day); }
+function renderHeatmap(){
+  const svg=document.getElementById("heat"); svg.innerHTML="";
+  const start = weekStartMonday(pd(TRACK_START));
+  const lastDate = MODE==="now" ? addDays(pd(TODAY),21) : addDays(pd(TODAY),90);
+  const end = weekStartMonday(lastDate); // start of last week col
+  const weeks = Math.round((end-start)/(86400000*7))+1;
+  const W = LEFT + weeks*(CELL+GAP) + 4;
+  const H = TOP + 7*(CELL+GAP) + 4;
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  // weekday labels (Mon,Wed,Fri)
+  const wdRows=["月","","水","","金","","日"];
+  wdRows.forEach((t,r)=>{ if(!t)return;
+    const y=TOP+r*(CELL+GAP)+CELL-3;
+    const tx=el("text",{x:0,y,class:"wd-label"}); tx.textContent=t; svg.appendChild(tx);
+  });
+
+  let lastMonth=-1;
+  for(let w=0; w<weeks; w++){
+    const colDate = addDays(start, w*7);
+    // month label when month changes at top of column
+    const m = colDate.getMonth();
+    if(m!==lastMonth){
+      lastMonth=m;
+      const tx=el("text",{x:LEFT+w*(CELL+GAP), y:14, class:"month-label"});
+      tx.textContent=(m+1)+"月"; svg.appendChild(tx);
+    }
+    for(let r=0;r<7;r++){
+      const d = addDays(colDate, r);
+      const ds = key(d);
+      const info = cellClass(ds, MODE);
+      const x=LEFT+w*(CELL+GAP), y=TOP+r*(CELL+GAP);
+      const rect=el("rect",{x,y,width:CELL,height:CELL,rx:2.5,class:"heat-cell"});
+      rect.setAttribute("fill", FILL[info.state]);
+      if(info.state==="future"){
+        rect.setAttribute("fill","var(--cell-future)");
+        rect.setAttribute("stroke","var(--cell-future-stroke)");
+        rect.setAttribute("stroke-dasharray","2 2");
+        rect.setAttribute("stroke-width","1");
+      }
+      if(info.projected){ rect.setAttribute("opacity","0.5"); }
+      // hover data
+      rect.__info={ds,info};
+      rect.addEventListener("mousemove", onCellHover);
+      rect.addEventListener("mouseleave", hideTip);
+      svg.appendChild(rect);
+    }
+  }
+}
+function onCellHover(e){
+  const {ds,info}=e.currentTarget.__info;
+  let body;
+  if(info.state==="future") body=`<div class="t-val">未来</div><div class="t-tag">これから記録されます</div>`;
+  else if(info.state==="pretrack") body=`<div class="t-val">記録対象外</div><div class="t-tag">記録開始前</div>`;
+  else if(info.state==="empty") body=`<div class="t-val">未記録</div><div class="t-tag">スナップショットなし</div>`;
+  else body=`<div class="t-val">${info.amount} 問</div>`+(info.projected?`<div class="t-tag">予測ダミー</div>`:``);
+  showTip(e, `<div class="t-date">${fmtJ(ds)}</div>${body}`);
+}
+
+/* ---------------- TREND ---------------- */
+function movingAvg(series, win){
+  // series: [{date, amount|null}] -> ma over last `win` non-null values
+  const out=[];
+  for(let i=0;i<series.length;i++){
+    const slice=[]; for(let j=Math.max(0,i-win+1); j<=i; j++){ if(series[j].amount!==null) slice.push(series[j].amount); }
+    out.push(slice.length? slice.reduce((a,b)=>a+b,0)/slice.length : null);
+  }
+  return out;
+}
+function isoWeekKey(dt){ const d=weekStartMonday(dt); return key(d); }
+function aggregate(series, gran){
+  if(gran==="day") return series.map(o=>({label:o.date, sub:`${pd(o.date).getMonth()+1}/${pd(o.date).getDate()}`, amount:o.amount}));
+  const buckets=new Map();
+  series.forEach(o=>{
+    if(o.amount===null) return;
+    let k,lab,sub;
+    if(gran==="week"){ k=isoWeekKey(pd(o.date)); const d=pd(k); sub=`${d.getMonth()+1}/${d.getDate()}週`; lab=k; }
+    else { const d=pd(o.date); k=`${d.getFullYear()}-${d.getMonth()+1}`; sub=`${d.getMonth()+1}月`; lab=k; }
+    if(!buckets.has(k)) buckets.set(k,{label:lab,sub,amount:0});
+    buckets.get(k).amount += o.amount;
+  });
+  return [...buckets.values()];
+}
+function currentSeries(){
+  if(MODE==="now") return SEED.daily_amount.slice();
+  // now + 90 future days
+  const arr=SEED.daily_amount.slice();
+  let cur=addDays(pd(TODAY),1); const end=addDays(pd(TODAY),90);
+  while(cur<=end){ const ds=key(cur); arr.push({date:ds, amount: future.has(ds)?future.get(ds):null, proj:true}); cur=addDays(cur,1); }
+  return arr;
+}
+function renderTrend(){
+  const svg=document.getElementById("trend"); svg.innerHTML="";
+  const raw=currentSeries();
+  const agg=aggregate(raw, GRAN);
+  // moving average only meaningful in day view
+  const ma = GRAN==="day" ? movingAvg(raw,7) : null;
+
+  const W=820, H=240, mL=34, mR=14, mT=14, mB=26;
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  const iw=W-mL-mR, ih=H-mT-mB;
+  const vals=agg.map(a=>a.amount).filter(v=>v!=null);
+  const maxV=Math.max(10, ...vals, ...(ma?ma.filter(v=>v!=null):[]));
+  const yMax=Math.ceil(maxV/10)*10;
+  const n=agg.length;
+  const xAt=i=> n<=1? mL+iw/2 : mL + i*(iw/(n-1));
+  const yAt=v=> mT + ih - (v/yMax)*ih;
+
+  // gridlines + y ticks — clean 10-step intervals
+  const step = yMax<=30?5:10;
+  const ticks = Math.round(yMax/step);
+  for(let t=0;t<=ticks;t++){
+    const val=step*t; const y=yAt(val);
+    svg.appendChild(el("line",{x1:mL,y1:y,x2:W-mR,y2:y,stroke:"var(--grid)","stroke-width":1}));
+    const tx=el("text",{x:mL-6,y:y+3.5,"text-anchor":"end",fill:"var(--text-muted)","font-size":10,"font-variant-numeric":"tabular-nums"}); tx.textContent=val; svg.appendChild(tx);
+  }
+  // baseline
+  svg.appendChild(el("line",{x1:mL,y1:yAt(0),x2:W-mR,y2:yAt(0),stroke:"var(--baseline)","stroke-width":1}));
+
+  // shade projected region for day view in future mode
+  if(MODE==="future" && GRAN==="day"){
+    const splitIdx = raw.findIndex(r=>r.proj);
+    if(splitIdx>0){
+      const xs=xAt(splitIdx-0.5);
+      svg.appendChild(el("rect",{x:xs,y:mT,width:(W-mR)-xs,height:ih,fill:"var(--series-1-soft)",opacity:0.5}));
+      const tt=el("text",{x:xs+6,y:mT+12,fill:"var(--text-muted)","font-size":10}); tt.textContent="予測 →"; svg.appendChild(tt);
+    }
+  }
+
+  // moving-average dashed line (day view)
+  if(ma){
+    let dpath=""; let started=false;
+    ma.forEach((v,i)=>{ if(v==null)return; dpath+=(started?"L":"M")+xAt(i)+" "+yAt(v)+" "; started=true; });
+    svg.appendChild(el("path",{d:dpath,fill:"none",stroke:"var(--text-muted)","stroke-width":2,"stroke-dasharray":"5 4","stroke-linejoin":"round","stroke-linecap":"round"}));
+  }
+
+  // main line (skip null gaps)
+  let path=""; let started=false;
+  agg.forEach((a,i)=>{ if(a.amount==null){started=false;return;} path+=(started?"L":"M")+xAt(i)+" "+yAt(a.amount)+" "; started=true; });
+  svg.appendChild(el("path",{d:path,fill:"none",stroke:"var(--series-1)","stroke-width":2,"stroke-linejoin":"round","stroke-linecap":"round"}));
+
+  // points + hover targets
+  agg.forEach((a,i)=>{
+    if(a.amount==null) return;
+    const proj = MODE==="future" && GRAN==="day" && raw[i] && raw[i].proj;
+    const cx=xAt(i), cy=yAt(a.amount);
+    // end/emphasis dot only on a few to avoid clutter: last real point
+    const dot=el("circle",{cx,cy,r:3.5,fill:"var(--series-1)",stroke:"var(--surface-1)","stroke-width":2});
+    if(proj) dot.setAttribute("opacity","0.5");
+    svg.appendChild(dot);
+    // invisible larger hit target
+    const hit=el("circle",{cx,cy,r:11,fill:"transparent"});
+    hit.__t={a,proj};
+    hit.addEventListener("mousemove",onPtHover);
+    hit.addEventListener("mouseleave",hideTip);
+    svg.appendChild(hit);
+    // x labels: sparse
+    if(GRAN!=="day" || i%Math.ceil(n/8)===0 || i===n-1){
+      const tx=el("text",{x:cx,y:H-8,"text-anchor":"middle",fill:"var(--text-muted)","font-size":9.5}); tx.textContent=a.sub; svg.appendChild(tx);
+    }
+  });
+
+  // gran note
+  const note=document.getElementById("gran-note");
+  if(MODE==="now" && GRAN!=="day") note.textContent = "※ 週・月ビューは記録が貯まるほど意味を持ちます（現在は14日分のみ）。";
+  else if(GRAN==="day") note.textContent = "破線＝7日移動平均。移動平均は記録が7日以上たまると安定します。";
+  else note.textContent="";
+}
+function onPtHover(e){
+  const {a,proj}=e.currentTarget.__t;
+  const dstr = GRAN==="day"? fmtJ(a.label) : a.sub;
+  showTip(e, `<div class="t-date">${dstr}</div><div class="t-val">${a.amount} 問</div>`+(proj?`<div class="t-tag">予測ダミー</div>`:``));
+}
+
+/* ---------------- tooltip ---------------- */
+const tip=document.getElementById("tip");
+function showTip(e,html){
+  tip.innerHTML=html; tip.style.opacity="1";
+  let x=e.clientX+14, y=e.clientY+14;
+  const r=tip.getBoundingClientRect();
+  if(x+r.width>innerWidth-8) x=e.clientX-r.width-14;
+  if(y+r.height>innerHeight-8) y=e.clientY-r.height-14;
+  tip.style.left=x+"px"; tip.style.top=y+"px";
+}
+function hideTip(){ tip.style.opacity="0"; }
+
+/* ---------------- table ---------------- */
+function renderTable(){
+  const tb=document.querySelector("#data-table tbody"); tb.innerHTML="";
+  SEED.daily_amount.forEach(o=>{
+    const tr=document.createElement("tr");
+    const d=pd(o.date);
+    tr.innerHTML=`<td>${o.date}</td><td>${WD[d.getDay()]}</td><td>${o.amount===null?"—（未記録）":o.amount}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+/* ---------------- wire up ---------------- */
+function setMode(m){
+  MODE=m;
+  document.getElementById("btn-now").setAttribute("aria-pressed", m==="now");
+  document.getElementById("btn-future").setAttribute("aria-pressed", m==="future");
+  renderMeta(); renderHeatmap(); renderTrend();
+}
+function setGran(g){
+  GRAN=g;
+  document.querySelectorAll(".seg.small button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.gran===g));
+  renderTrend();
+}
+document.getElementById("btn-now").onclick=()=>setMode("now");
+document.getElementById("btn-future").onclick=()=>setMode("future");
+document.querySelectorAll(".seg.small button").forEach(b=> b.onclick=()=>setGran(b.dataset.gran));
+document.getElementById("theme-toggle").onclick=()=>{
+  const root=document.documentElement;
+  const cur=root.getAttribute("data-theme");
+  const isDark = cur==="dark" || (!cur && matchMedia("(prefers-color-scheme: dark)").matches);
+  root.setAttribute("data-theme", isDark?"light":"dark");
+  renderHeatmap(); renderTrend();
+};
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change",()=>{ if(!document.documentElement.getAttribute("data-theme")){renderHeatmap();renderTrend();} });
+
+/* init */
+renderKPIs(); renderMeta(); renderHeatmap(); renderTrend(); renderTable();
+</script>
