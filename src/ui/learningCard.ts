@@ -98,6 +98,15 @@ async function populateDetails(container: HTMLElement, tip: Tooltip, data: Learn
       renderers[i]();
     }
   };
+  // 完了検知（content.ts が確定分の下流で zss:completion を発火）で、描画済みの
+  // 予測タブ（今日の目標）と教科タブ（進捗ドーナツ）を最新の教科データで再描画する。
+  const onCompletion = () => {
+    if (!container.isConnected) { window.removeEventListener('zss:completion', onCompletion); return; }
+    coursesP = fetchCourseMaterials(); // メモ化キャッシュを最新の完了数で差し替え
+    if (done[1]) void renderPredictTab(panes[1], getSeriesOnce, getCourses, tip, data);
+    if (done[2]) void renderSubjectsTab(panes[2], getCourses, tip);
+  };
+  window.addEventListener('zss:completion', onCompletion);
   container.appendChild(tabBar(['推移', '予測', '教科', '分析'], select));
   for (const p of panes) container.appendChild(p);
   select(0);

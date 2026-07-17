@@ -120,33 +120,43 @@ function maybeRecordVisit(): void {
 // 【誤検知対策】answerings は不合格でも発火しうる。イベントは"トリガー"に過ぎず、
 //   実際に passed 合計が増えた時だけカウント（増えていなければ＝不合格/既計上で無視）。
 let compDebounce = 0;
+// 完了を"確定"させる。集計API(passed_materials)はサーバ側の更新にラグがあり、
+// 検知直後は増分0のことがある（動画passed直後など）。増分0なら数秒あけて数回リトライする。
+async function settleCompletion(attempt: number): Promise<void> {
+  try {
+    const mt = await fetchMaterialTotals(); // 実際の passed/total
+    const prev = await getLastPassed();
+    if (prev === null) {
+      await setLastPassed(mt.passed); // 初回は基準値のみ（過去分を誤カウントしない）
+      if (DEV_NOTIFY) showToast(`ℹ️ [dev] 基準値を設定: passed=${mt.passed}（初回は計上なし）`, { icon: 'ℹ️', durationMs: 9000 });
+      return;
+    }
+    const delta = mt.passed - prev;
+    if (delta <= 0) {
+      // まだ集計に反映されていない可能性 → 少し待って再確認（最大3回）。
+      if (attempt < 3) {
+        window.setTimeout(() => void settleCompletion(attempt + 1), 3500);
+        if (DEV_NOTIFY) showToast(`⏳ [dev] passed 未反映（${mt.passed}）→ 再確認 ${attempt + 1}/3`, { icon: '⏳', accent: '#d9822b', durationMs: 6000 });
+        return;
+      }
+      // リトライ尽きても不変＝不合格/再提出/既計上 → 何もしない（下流は"確定分"だけ）
+      if (DEV_NOTIFY) showToast(`⚠️ [dev] passed 不変のまま（${mt.passed}）＝不合格/既計上`, { icon: '⚠️', accent: '#d9822b', durationMs: 9000 });
+      return;
+    }
+    await setLastPassed(mt.passed);
+    await recordCompletion(Date.now(), delta); // "その時刻"へ実カウントぶん加算（正確な時間帯）
+    window.dispatchEvent(new Event('zss:hourupdate')); // 時間帯トレンドをライブ更新
+    window.dispatchEvent(new Event('zss:completion')); // 予測/教科タブ（今日の目標）をライブ再描画
+    await notifyProgress(mt.passed, mt.total); // 節目トースト
+    refreshSummary(); // コース/章バナーの残りを最新化
+    if (DEV_NOTIFY) showToast(`✅ [dev] 確定: passed ${prev}→${mt.passed}（+${delta}）を記録`, { icon: '✅', accent: '#1a8a4a', durationMs: 9000 });
+  } catch (e) {
+    if (DEV_NOTIFY) showToast(`❌ [dev] 集計失敗: ${String(e).slice(0, 60)}`, { icon: '❌', accent: '#d9822b', durationMs: 9000 });
+  }
+}
 function onCompletion(): void {
   window.clearTimeout(compDebounce);
-  compDebounce = window.setTimeout(async () => {
-    try {
-      const mt = await fetchMaterialTotals(); // 実際の passed/total
-      const prev = await getLastPassed();
-      if (prev === null) {
-        await setLastPassed(mt.passed); // 初回は基準値のみ（過去分を誤カウントしない）
-        if (DEV_NOTIFY) showToast(`ℹ️ [dev] 基準値を設定: passed=${mt.passed}（初回は計上なし）`, { icon: 'ℹ️', durationMs: 9000 });
-        return;
-      }
-      const delta = mt.passed - prev;
-      if (delta <= 0) {
-        // 不合格/再提出/既計上 → 何もしない（＝ここより下流は"確定分"だけ）
-        if (DEV_NOTIFY) showToast(`⚠️ [dev] 検知したが passed 不変（${mt.passed}）＝不合格/既計上`, { icon: '⚠️', accent: '#d9822b', durationMs: 9000 });
-        return;
-      }
-      await setLastPassed(mt.passed);
-      await recordCompletion(Date.now(), delta); // "その時刻"へ実カウントぶん加算（正確な時間帯）
-      window.dispatchEvent(new Event('zss:hourupdate')); // 開いているカードの時間帯トレンドをライブ更新
-      await notifyProgress(mt.passed, mt.total); // 節目トースト
-      refreshSummary(); // コース/章バナーの残りを最新化
-      if (DEV_NOTIFY) showToast(`✅ [dev] 確定: passed ${prev}→${mt.passed}（+${delta}）を記録`, { icon: '✅', accent: '#1a8a4a', durationMs: 9000 });
-    } catch (e) {
-      if (DEV_NOTIFY) showToast(`❌ [dev] 集計失敗: ${String(e).slice(0, 60)}`, { icon: '❌', accent: '#d9822b', durationMs: 9000 });
-    }
-  }, 4000);
+  compDebounce = window.setTimeout(() => void settleCompletion(0), 4000);
 }
 function listenCompletions(): void {
   window.addEventListener('message', (e) => {
