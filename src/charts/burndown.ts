@@ -15,8 +15,10 @@ export interface Pt {
   remaining: number;
 }
 
-/** 教材消化バーンダウン: 日次実績(再構成)＋曜日/祝日考慮の予測カーブ＋必要ライン。 */
-export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip): SVGElement {
+const TARGET_COL = '#0d9488'; // 目標日ライン（凡例と共有）
+
+/** 教材消化バーンダウン: 日次実績(再構成)＋曜日/祝日考慮の予測カーブ＋必要ライン＋（任意）目標日ライン。 */
+export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, targetDate?: Date | null): SVGElement {
   const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': '教材消化バーンダウン' });
   const total = Math.max(1, p.total);
   // x範囲: 直近実績の開始 〜 締切
@@ -101,6 +103,22 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip): SVGEl
     stroke: 'var(--muted)', 'stroke-width': 1.5, 'stroke-dasharray': '4 4',
     class: 'zss-afade', style: 'animation-delay:250ms',
   }));
+
+  // 目標日ライン（ユーザーが設定した「完了させたい日」への理想ペース。今→目標日で0へ）。
+  // 締切より手前のときのみ描画（締切と一致すると必要ラインと重なるため）。
+  if (targetDate && targetDate.getTime() > nowT && targetDate.getTime() < t1 && p.remaining > 0) {
+    const tx = x(targetDate.getTime());
+    svg.appendChild(s('line', {
+      x1: x(nowT), y1: y(p.remaining), x2: tx, y2: y(0),
+      stroke: TARGET_COL, 'stroke-width': 2, 'stroke-linecap': 'round',
+      pathLength: 1, class: 'zss-adraw', style: 'animation-delay:450ms',
+    }));
+    svg.appendChild(s('line', { x1: tx, y1: y(0), x2: tx, y2: y(0) + 4, stroke: TARGET_COL, 'stroke-width': 1 }));
+    svg.appendChild(s('text', {
+      x: tx, y: T + 8, 'text-anchor': 'middle', 'font-size': 9, fill: TARGET_COL, 'font-weight': 700,
+      class: 'zss-afade', style: 'animation-delay:1000ms',
+    }, ['目標']));
+  }
 
   const col = p.onTrack ? 'var(--success)' : '#d9822b';
   const nowMs = nowAnchor;

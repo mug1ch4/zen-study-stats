@@ -640,6 +640,33 @@ function renderPredictorSection(
   dateInput.min = isoDate(today0);
   dateInput.max = isoDate(pred.finalDeadline);
   const recOut = h('div', { class: 'zss-rec' }, []);
+
+  // 実績・完了見込みグラフ。目標日ライン（選択日への理想ペース）を反映するため再描画可能に。
+  const TARGET_COL = '#0d9488';
+  const chartHost = h('div', { class: 'zss-chart' }, []);
+  const legendHost = h('div', { class: 'zss-cal-legend' }, []);
+  const parseTarget = (v: string): Date | null => {
+    if (!v || pred.remaining <= 0) return null;
+    const t = new Date(v + 'T23:59:59+09:00');
+    if (isNaN(t.getTime()) || t.getTime() < today0.getTime()) return null;
+    // 締切と実質同日（12h以内）なら必要ラインと重なるので目標線は出さない
+    if (t.getTime() >= pred.finalDeadline.getTime() - 12 * 3600 * 1000) return null;
+    return t;
+  };
+  const drawChart = (target: Date | null): void => {
+    chartHost.textContent = '';
+    chartHost.appendChild(renderBurndown(pred, actual, tip, target));
+    legendHost.textContent = '';
+    const items: HTMLElement[] = [
+      legendLine('var(--muted)', '必要ライン'),
+      legendLine(pred.onTrack ? 'var(--success)' : '#d9822b', '予測(帯=P15〜85)'),
+      legendItem('var(--primary)', '実績'),
+      ...(pred.montecarlo ? [legendLine('#e5484d', '完了見込み'), legendItem('#6f5cc4', '完了分布')] : []),
+      ...(target ? [legendLine(TARGET_COL, '目標ペース(選択日)')] : []),
+    ];
+    for (const it of items) legendHost.appendChild(it);
+  };
+
   const updateRec = () => {
     recOut.textContent = '';
     const v = dateInput.value;
@@ -685,9 +712,14 @@ function renderPredictorSection(
       ])
     );
   };
-  dateInput.addEventListener('input', updateRec);
-  dateInput.addEventListener('change', updateRec);
+  const onDate = (): void => {
+    updateRec();
+    drawChart(parseTarget(dateInput.value)); // 目標日ラインを即反映（アニメーション付き）
+  };
+  dateInput.addEventListener('input', onDate);
+  dateInput.addEventListener('change', onDate);
   updateRec();
+  drawChart(parseTarget(dateInput.value));
   const targetBox = h('div', { class: 'zss-target-box' }, [
     h('div', { class: 'zss-target-head' }, ['目標日から逆算']),
     h('div', { class: 'zss-target' }, [h('span', {}, ['完了させたい日:']), dateInput]),
@@ -702,13 +734,8 @@ function renderPredictorSection(
       h('div', { class: 'zss-section-title' }, ['実績・完了見込み']),
       h('div', { class: 'zss-section-note' }, [`締切 ${md(pred.finalDeadline)}`]),
     ]),
-    h('div', { class: 'zss-chart' }, [renderBurndown(pred, actual, tip)]),
-    h('div', { class: 'zss-cal-legend' }, [
-      legendLine('var(--muted)', '必要ライン'),
-      legendLine(pred.onTrack ? 'var(--success)' : '#d9822b', '予測(帯=P15〜85)'),
-      legendItem('var(--primary)', '実績'),
-      ...(pred.montecarlo ? [legendLine('#e5484d', '完了見込み'), legendItem('#6f5cc4', '完了分布')] : []),
-    ]),
+    chartHost,
+    legendHost,
   ];
   return h('div', { class: 'zss-section' }, [
     ...(quest ? [quest] : []),
