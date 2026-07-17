@@ -120,6 +120,13 @@ function parseBackup(text: string): Backup {
 
 /** データ管理セクション（カード末尾に控えめに配置）。 */
 export function renderDataManage(): HTMLElement {
+  // プレビュー/ライブデモ（chrome.storage なし）では、壊れたボタンを出さず案内のみ。
+  if (!hasStorage()) {
+    return h('details', { class: 'zss-fold zss-dm' }, [
+      h('summary', {}, ['データのバックアップ / 復元']),
+      h('p', { class: 'zss-dm-note' }, ['拡張機能として ZEN Study 上で動作しているときに利用できます（このデモでは無効です）。']),
+    ]);
+  }
   const status = h('div', { class: 'zss-dm-status' }, []);
   const setStatus = (msg: string, kind: 'ok' | 'err' | '' = '') => {
     status.textContent = msg;

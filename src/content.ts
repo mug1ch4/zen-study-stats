@@ -187,6 +187,11 @@ function onRouteChange(): void {
 function startup(): void {
   started = true;
   void initDarkMode(); // サイト全体ダークモード（全ページ）
+  try {
+    void chrome.storage?.local.remove('zss:courseVol3'); // 旧集計キャッシュの残留掃除（v0.1.8でv4へ移行）
+  } catch {
+    /* ignore */
+  }
   // 全ページで1日1回だけスナップショット（学習数14日窓のマージ＋完了レポート累計＋教材消化）
   void maybeDailySnapshot(async () => {
     const la = await fetchLearningAmounts();

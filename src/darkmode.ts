@@ -296,7 +296,11 @@ function makeNavButton(template: HTMLElement): HTMLElement {
   btn.id = NAV_BTN_ID;
   btn.removeAttribute('href'); btn.removeAttribute('aria-current');
   btn.setAttribute('role', 'button'); btn.style.cursor = 'pointer';
+  btn.setAttribute('tabindex', '0'); // href を外した <a> はフォーカス不可になるため（キーボード操作可能に）
   btn.title = 'テーマ切替（実験的機能: 表示が崩れる場合はライトに戻してください）';
+  btn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); animateNextChange(); void setEnabled(!enabled); }
+  });
   const i = btn.querySelector('i');
   const icon = themeIcon(enabled, i?.getAttribute('class') ?? '');
   icon.setAttribute('width', String(size)); icon.setAttribute('height', String(size));
