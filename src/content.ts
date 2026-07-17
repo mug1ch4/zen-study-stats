@@ -4,10 +4,11 @@ import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } fro
 import { fetchMaterialTotals } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, initDarkModeFrame, preInitDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
-import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart } from './history';
+import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, getSeries } from './history';
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
-import { notifyRolloverSoon, notifyProgress } from './notify';
+import { notifyRolloverSoon, notifyProgress, notifyWeekReview } from './notify';
+import { zenMondayISO, parseDate, weekdayLabel } from './format';
 import { showToast } from './ui/toast';
 
 // 【DEV】完了検知の動作確認用トースト。切り分け（observer発火/確定判定）を可視化する。
@@ -206,6 +207,23 @@ function startup(): void {
       const mt = await fetchMaterialTotals(); // 教材消化（コツコツ視聴を反映する主指標）
       await snapshotMaterials(mt.passed, mt.total);
       await ensureDayStart(mt.passed); // 新しい学習日の始点passedを記録（デイリー目標の当日完了数算出用）
+      // 週の始点。週が切り替わったら「先週のまとめ」を1回だけ通知（Fresh Start）
+      const ws = await ensureWeekStart(mt.passed);
+      if (ws.rolled && ws.prev) {
+        const weekMat = Math.max(0, mt.passed - ws.prev.passed);
+        const series = await getSeries();
+        const monday = zenMondayISO();
+        const mondayT = parseDate(monday).getTime();
+        const lastWeek = series.filter((p) => {
+          const t = parseDate(p.date).getTime();
+          return t < mondayT && t >= mondayT - 7 * 86400000;
+        });
+        const sum = lastWeek.reduce((a, p) => a + p.amount, 0);
+        const best = lastWeek.reduce<{ date: string; amount: number } | null>((a, p) => (!a || p.amount > a.amount ? p : a), null);
+        const bits = [`教材 ${weekMat}`, `学習数 ${sum}件`];
+        if (best && best.amount > 0) bits.push(`ベストは${weekdayLabel(best.date)}曜 ${best.amount}件`);
+        void notifyWeekReview(monday, `先週のまとめ: ${bits.join('・')}。今週も仕切り直していきましょう。`);
+      }
     } catch {
       /* 教材取得失敗も他を妨げない */
     }

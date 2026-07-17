@@ -7,6 +7,7 @@ interface NotifyState {
   milestone: number; // 直近に通知した全体%のしきい値
   questDate: string; // デイリー達成を通知した日
   rolloverDate: string; // 日付更新間近を通知した日
+  weekReview?: string; // 週次レビューを通知した週（月曜ISO）
 }
 const MILESTONES = [10, 25, 50, 75, 90, 100];
 
@@ -50,6 +51,15 @@ export async function notifyQuest(todayAmount: number, target: number): Promise<
   s.questDate = today;
   await save(s);
   showToast(`今日の目標（${target}教材）を達成しました。`, { accent: '#1a8a4a' });
+}
+
+/** 週明けに1回だけ「先週のまとめ」を通知（Fresh Start効果: 仕切り直しの節目）。 */
+export async function notifyWeekReview(weekISO: string, text: string): Promise<void> {
+  const s = await load();
+  if (s.weekReview === weekISO) return;
+  s.weekReview = weekISO;
+  await save(s);
+  showToast(text, { durationMs: 9000 });
 }
 
 /** 5:00(JST)の日付更新が近い（4:30〜5:00）時に1日1回通知。 */

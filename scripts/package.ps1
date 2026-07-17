@@ -16,8 +16,8 @@ $stage = Join-Path $env:TEMP "zss-pkg-$version"
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Path $stage, "$stage\dist", "$stage\icons" | Out-Null
 
-Copy-Item manifest.json, observer.js $stage
-Copy-Item dist\content.js "$stage\dist"
+Copy-Item manifest.json, observer.js, popup.html $stage
+Copy-Item dist\content.js, dist\popup.js "$stage\dist"
 Copy-Item icons\icon16.png, icons\icon32.png, icons\icon48.png, icons\icon128.png "$stage\icons"
 
 if (Test-Path $zip) { Remove-Item -Force $zip }

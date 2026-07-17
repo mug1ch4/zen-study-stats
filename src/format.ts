@@ -33,6 +33,13 @@ export function zenToday(nowMs: number = Date.now()): Date {
   return parseDate(zenTodayISO(nowMs));
 }
 
+/** 「学習上の今週」の月曜 "YYYY-MM-DD"（週目標・週次レビューの週キー）。 */
+export function zenMondayISO(nowMs: number = Date.now()): string {
+  const d = parseDate(zenTodayISO(nowMs));
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Mon=0
+  return isoLocal(d);
+}
+
 /** 0=日 .. 6=土 */
 export function weekdayIndex(iso: string): number {
   return parseDate(iso).getDay();

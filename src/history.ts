@@ -4,7 +4,7 @@
 // 学習数APIは「直近14日」しか返さないため、サイトを開いた日に1回スナップショットして
 // 14日窓をマージ蓄積する。14日以内に一度でも開けば穴は空かない。
 import type { DailyAmount } from './api';
-import { zenTodayISO } from './format';
+import { zenTodayISO, zenMondayISO } from './format';
 
 const KEY_HISTORY = 'zss:history'; // { "YYYY-MM-DD": number } 学習数
 const KEY_REPORTHIST = 'zss:reportHist'; // { "YYYY-MM-DD": number } 完了レポート累計
@@ -138,6 +138,116 @@ export async function ensureDayStart(currentPassed: number): Promise<void> {
     if (!cur || cur.date !== today) {
       await chrome.storage.local.set({ [KEY_DAYSTART]: { date: today, passed: currentPassed } });
     }
+  } catch {
+    /* ignore */
+  }
+}
+
+// --- 週の始点・週間目標（週目標バー/週次レビュー用） ---
+const KEY_WEEKSTART = 'zss:weekStart'; // { week: 月曜"YYYY-MM-DD", passed: number }
+const KEY_WEEKGOAL = 'zss:weekGoal'; // number（教材/週）
+
+export interface WeekStart { week: string; passed: number }
+export async function getWeekStart(): Promise<WeekStart | null> {
+  if (memOverride) return null;
+  try {
+    const r = await chrome.storage.local.get([KEY_WEEKSTART]);
+    const v = r?.[KEY_WEEKSTART] as WeekStart | undefined;
+    return v && typeof v.passed === 'number' ? v : null;
+  } catch {
+    return null;
+  }
+}
+/** 新しい週（月曜・5:00境界）になったら週始点を記録。rolled=切替が起きたか、prev=前週の始点。 */
+export async function ensureWeekStart(currentPassed: number): Promise<{ rolled: boolean; prev: WeekStart | null }> {
+  if (memOverride) return { rolled: false, prev: null };
+  try {
+    const week = zenMondayISO();
+    const cur = await getWeekStart();
+    if (!cur || cur.week !== week) {
+      await chrome.storage.local.set({ [KEY_WEEKSTART]: { week, passed: currentPassed } });
+      return { rolled: !!cur, prev: cur }; // 初回設置(cur=null)はレビュー対象外
+    }
+    return { rolled: false, prev: null };
+  } catch {
+    return { rolled: false, prev: null };
+  }
+}
+export async function getWeekGoal(): Promise<number | null> {
+  if (memOverride) return null;
+  try {
+    const r = await chrome.storage.local.get([KEY_WEEKGOAL]);
+    const v = r?.[KEY_WEEKGOAL];
+    return typeof v === 'number' && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+export async function setWeekGoal(n: number): Promise<void> {
+  if (memOverride) return;
+  try {
+    await chrome.storage.local.set({ [KEY_WEEKGOAL]: n });
+  } catch {
+    /* ignore */
+  }
+}
+
+// --- 予測スナップショット（的中率＝キャリブレーション検証用） ---
+// 予測時点の「d日後の残数バンド」を保存し、後日の実績と突き合わせる。1日1件・直近180日分。
+const KEY_PREDLOG = 'zss:predLog';
+export interface PredCheckpoint { off: number; p15: number; p50: number; p85: number }
+export interface PredLogEntry { remaining: number; cp: PredCheckpoint[] }
+export type PredLog = Record<string, PredLogEntry>;
+
+export async function getPredLog(): Promise<PredLog> {
+  if (memOverride) return {};
+  try {
+    const r = await chrome.storage.local.get([KEY_PREDLOG]);
+    return (r?.[KEY_PREDLOG] as PredLog) ?? {};
+  } catch {
+    return {};
+  }
+}
+/** その日の予測スナップショットを保存（既にあれば何もしない・180日で剪定）。 */
+export async function savePredSnapshot(entry: PredLogEntry): Promise<void> {
+  if (memOverride) return;
+  try {
+    const log = await getPredLog();
+    const today = todayISO();
+    if (log[today]) return;
+    log[today] = entry;
+    const keys = Object.keys(log).sort();
+    while (keys.length > 180) delete log[keys.shift()!];
+    await chrome.storage.local.set({ [KEY_PREDLOG]: log });
+  } catch {
+    /* ignore */
+  }
+}
+
+// --- 実績バッジの解除記録（初達成日を残す） ---
+const KEY_ACH = 'zss:achievements'; // { [id]: 達成日"YYYY-MM-DD" }
+export async function getAchievementDates(): Promise<Record<string, string>> {
+  if (memOverride) return {};
+  try {
+    const r = await chrome.storage.local.get([KEY_ACH]);
+    return (r?.[KEY_ACH] as Record<string, string>) ?? {};
+  } catch {
+    return {};
+  }
+}
+/** 新規達成のみ記録（達成日は初回のみ・巻き戻さない）。 */
+export async function recordAchievements(ids: string[]): Promise<void> {
+  if (memOverride || !ids.length) return;
+  try {
+    const cur = await getAchievementDates();
+    let changed = false;
+    for (const id of ids) {
+      if (!cur[id]) {
+        cur[id] = todayISO();
+        changed = true;
+      }
+    }
+    if (changed) await chrome.storage.local.set({ [KEY_ACH]: cur });
   } catch {
     /* ignore */
   }

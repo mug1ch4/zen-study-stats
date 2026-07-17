@@ -244,6 +244,19 @@ export const CSS = `
 .zss-quest-fill.met { background: var(--success); }
 .zss-quest-note { font-size: 11px; color: var(--faint); }
 
+/* 週間目標（デイリーの下・入力つき） */
+.zss-week .zss-week-edit { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
+.zss-week .zss-week-edit input { font: inherit; font-size: 12px; width: 4.5em; padding: 1px 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--ink); }
+.zss-week .zss-quest-top { flex-wrap: wrap; }
+
+/* 実績バッジ */
+.zss-ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin-top: 6px; }
+.zss-ach { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--surface); opacity: .55; }
+.zss-ach.on { opacity: 1; border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+.zss-ach-t { font-size: 11.5px; font-weight: 700; color: var(--ink); }
+.zss-ach.on .zss-ach-t { color: var(--primary-strong); }
+.zss-ach-d { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
 /* --- データのバックアップ/復元 --- */
 .zss-dm-note { font-size: 11px; color: var(--faint); margin: 6px 0 8px; line-height: 1.5; }
 .zss-dm-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

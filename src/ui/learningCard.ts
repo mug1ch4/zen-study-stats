@@ -5,7 +5,10 @@ import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
-import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart } from '../history';
+import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements } from '../history';
+import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
+import { evaluateCalibration } from '../calibration';
+import { zenMondayISO } from '../format';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, type Section } from '../analysis';
 import { motivationNudges, type Nudge } from '../motivation';
 import { countUp } from '../anim';
@@ -357,8 +360,36 @@ async function renderPredictTab(
     const ds = await getDayStart();
     const todayDone = ds && ds.date === isoDate(zenToday()) ? Math.max(0, passed - ds.passed) : 0;
 
+    // 週間目標: 週始点(月曜5:00境界)からの教材差分。始点未記録ならカード表示時に補完。
+    await ensureWeekStart(passed);
+    const ws = await getWeekStart();
+    const weekDone = ws && ws.week === zenMondayISO() ? Math.max(0, passed - ws.passed) : 0;
+    const weekGoal = await getWeekGoal();
+    // 先週のまとめ（学習数ベース・月曜〜日曜）
+    const mondayT = new Date(zenMondayISO() + 'T12:00:00').getTime();
+    const lastWeek = merged.filter((p) => {
+      const t = new Date(p.date + 'T12:00:00').getTime();
+      return t < mondayT && t >= mondayT - 7 * 86400000;
+    });
+    const lastWeekSum = lastWeek.reduce((a, p) => a + p.amount, 0);
+    const weekEl = renderWeekGoal(pred, weekDone, weekGoal, lastWeek.length ? lastWeekSum : null);
+
+    // 予測スナップショット保存（1日1件）→ 的中率（キャリブレーション）評価
+    if (pred.montecarlo && pred.remaining > 0) {
+      const cps = [7, 14, 28]
+        .map((off) => pred.montecarlo!.band.find((b) => b.dayOffset === off))
+        .filter((b): b is NonNullable<typeof b> => !!b)
+        .map((b) => ({ off: b.dayOffset, p15: b.p15, p50: b.p50, p85: b.p85 }));
+      if (cps.length) void savePredSnapshot({ remaining: pred.remaining, cp: cps });
+    }
+    const cal = evaluateCalibration(await getPredLog(), mh.series, total);
+    const calNote =
+      cal.n >= 5 && cal.coverage !== null
+        ? `予測の的中率: これまでの予測のうち実績が P15〜85 帯に収まった割合 ${Math.round(cal.coverage * 100)}%（${cal.n}件で検証・理想は70%前後）。傾向: ${cal.bias === 'optimistic' ? 'やや楽観寄り（実際は予測より遅れがち）' : cal.bias === 'pessimistic' ? 'やや悲観寄り（実際は予測より速い）' : 'バランス良好'}。`
+        : `予測の的中率: 検証データを蓄積中（予測と後日の実績の突き合わせ ${cal.n}/5件〜で表示）。`;
+
     pane.textContent = '';
-    pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayDone, { savedTarget, electivesNote }));
+    pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayDone, { savedTarget, electivesNote, weekEl, calNote }));
 
     // 通知（節目・デイリー達成）。永続dedupで繰り返さない。
     void notifyProgress(passed, total);
@@ -462,11 +493,41 @@ async function renderAnalysisTab(
     pane.appendChild(h('div', { class: 'zss-analysis-head' }, ['あなたの学習傾向']));
     pane.appendChild(h('div', { class: 'zss-analysis-sub' }, [`記録 ${merged.length}日ぶんから分析（データが増えるほど精度が上がります）`]));
     for (const sec of sections) pane.appendChild(renderInsightSection(sec));
+
+    // 実績バッジ（実データに基づく達成のみ・初達成日を記録）
+    const achInput: AchInput = {
+      longestStreak: streak.longest,
+      studiedDays: merged.filter((p) => p.amount > 0).length,
+      passedMaterials: passedMat,
+      totalMaterials: totalMat,
+      completedCourses: courses.filter((c) => c.total > 0 && c.passed >= c.total).length,
+      totalCourses: courses.filter((c) => c.total > 0).length,
+    };
+    const unlocked = new Set(computeUnlocked(achInput));
+    void recordAchievements([...unlocked]);
+    const achDates = await getAchievementDates();
+    pane.appendChild(renderAchievements(unlocked, achDates));
   } catch (e) {
     console.warn('[ZSS] 分析の取得失敗:', e);
     pane.textContent = '';
     pane.appendChild(h('div', { class: 'zss-empty' }, ['分析データを取得できませんでした。']));
   }
+}
+
+/** 実績バッジのグリッド。解除済み=色付き＋達成日 / 未達成=グレー＋条件。 */
+function renderAchievements(unlocked: Set<string>, dates: Record<string, string>): HTMLElement {
+  const chips = ACHIEVEMENTS.map((a) => {
+    const on = unlocked.has(a.id) || !!dates[a.id];
+    return h('div', { class: 'zss-ach' + (on ? ' on' : ''), title: a.desc }, [
+      h('div', { class: 'zss-ach-t' }, [a.title]),
+      h('div', { class: 'zss-ach-d' }, [on ? (dates[a.id] ? `達成 ${shortDate(dates[a.id])}` : '達成') : a.desc]),
+    ]);
+  });
+  const n = ACHIEVEMENTS.filter((a) => unlocked.has(a.id) || dates[a.id]).length;
+  return h('div', { class: 'zss-insight-sec' }, [
+    h('div', { class: 'zss-insight-title' }, [`実績（${n} / ${ACHIEVEMENTS.length}）`]),
+    h('div', { class: 'zss-ach-grid' }, chips),
+  ]);
 }
 
 function renderMotivation(nudges: Nudge[]): HTMLElement {
@@ -541,6 +602,57 @@ function questTargetOf(pred: Prediction): number {
   return isFinite(pred.requiredPerDay) ? Math.max(1, Math.ceil(pred.requiredPerDay)) : pred.remaining;
 }
 
+/** 週間目標: 週N教材の目標＋今週の進捗バー＋先週サマリ。日次の凸凹を吸収する中間粒度。
+ *  目標は締切に間に合う最低ペース（義務週）以上のみ設定可（デイリー/教材数プランナーと同思想）。 */
+function renderWeekGoal(pred: Prediction, weekDone: number, savedGoal: number | null, lastWeekSum: number | null): HTMLElement | null {
+  if (pred.remaining <= 0) return null;
+  const minWeek = isFinite(pred.requiredPerDay) ? Math.max(1, Math.ceil(pred.requiredPerDay * 7)) : pred.remaining;
+  const goal0 = Math.max(minWeek, savedGoal ?? minWeek);
+
+  const bar = h('div', { class: 'zss-quest-bar' }, []);
+  const fill = h('div', { class: 'zss-quest-fill' }, []);
+  bar.appendChild(fill);
+  const count = h('span', { class: 'zss-quest-count' }, []);
+  const note = h('div', { class: 'zss-quest-note' }, []);
+  const input = h('input', { type: 'number', class: 'zss-target-pace', min: minWeek, step: 1, inputmode: 'numeric' }) as HTMLInputElement;
+  input.value = String(goal0);
+
+  const apply = (goal: number): void => {
+    const left = Math.max(0, goal - weekDone);
+    const met = left === 0;
+    const pct = Math.min(100, Math.round((weekDone / Math.max(1, goal)) * 100));
+    fill.style.width = `${pct}%`;
+    fill.classList.toggle('met', met);
+    count.textContent = '';
+    count.append(h('b', {}, [String(weekDone)]), ` / ${goal} 教材`, h('span', { class: 'zss-quest-left' }, [met ? '　週目標 達成' : `　あと ${left}`]));
+    note.textContent = met
+      ? '今週の目標を達成しました。上積みはそのまま貯金になります。'
+      : `月曜5:00はじまりの週間目標です（義務ペース 週${minWeek} 以上で設定可）。${lastWeekSum !== null ? `先週の学習数: ${lastWeekSum}件。` : ''}`;
+  };
+  const onInput = (): void => {
+    const n = Math.floor(Number(input.value));
+    if (!Number.isFinite(n) || n < minWeek) {
+      note.textContent = `週${minWeek} 教材（義務ペース）以上を入力してください。`;
+      return;
+    }
+    void setWeekGoal(n);
+    apply(n);
+  };
+  input.addEventListener('input', onInput);
+  input.addEventListener('change', onInput);
+  apply(goal0);
+
+  return h('div', { class: 'zss-quest zss-week' }, [
+    h('div', { class: 'zss-quest-top' }, [
+      h('span', { class: 'zss-quest-label' }, ['今週の目標']),
+      h('span', { class: 'zss-week-edit' }, [input, h('span', { class: 'zss-pace-min' }, ['/週'])]),
+      count,
+    ]),
+    bar,
+    note,
+  ]);
+}
+
 /** 今日のデイリークエスト: 締切から逆算した推奨ペースを「今日あとN教材」に落とす。 */
 function renderDailyQuest(pred: Prediction, todayAmount: number): HTMLElement | null {
   if (pred.remaining <= 0) return null; // 消化済みは verdict 側で祝う
@@ -578,7 +690,7 @@ function renderPredictorSection(
   actual: { date: string; remaining: number }[],
   tip: Tooltip,
   todayAmount: number,
-  opts: { savedTarget: string | null; electivesNote: string }
+  opts: { savedTarget: string | null; electivesNote: string; weekEl?: HTMLElement | null; calNote?: string }
 ): HTMLElement {
   // 見出しの判定（モンテカルロの確率・パーセンタイルを主に）
   let verdict: HTMLElement;
@@ -791,6 +903,7 @@ function renderPredictorSection(
   ];
   return h('div', { class: 'zss-section' }, [
     ...(quest ? [quest] : []),
+    ...(opts.weekEl ? [opts.weekEl] : []),
     ...chartBlock,
     h('div', { class: 'zss-section-head' }, [
       h('div', { class: 'zss-section-title' }, ['年度レポート完了予測']),
@@ -807,6 +920,7 @@ function renderPredictorSection(
     ...(analysisEl ? [analysisEl] : []),
     targetBox,
     paceBox,
+    ...(opts.calNote ? [h('div', { class: 'zss-pred-caveat' }, [opts.calNote])] : []),
     h('div', { class: 'zss-pred-caveat' }, [opts.electivesNote]),
     ...(pred.montecarlo
       ? [
