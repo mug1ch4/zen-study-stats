@@ -227,6 +227,17 @@ export const CSS = `
 .zss-conf.high .zss-conf-dot { background: var(--success); }
 .zss-conf.high .zss-conf-label { color: var(--success); }
 
+/* --- 次のレポート締切（月次） --- */
+.zss-deadline { border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border)); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+.zss-deadline.warn { border-color: color-mix(in srgb, #d9822b 45%, var(--border)); background: color-mix(in srgb, #d9822b 8%, var(--surface)); }
+.zss-deadline.ok { border-color: color-mix(in srgb, var(--success) 40%, var(--border)); background: color-mix(in srgb, var(--success) 7%, var(--surface)); }
+.zss-deadline-head { font-size: 11px; font-weight: 700; color: var(--primary-strong); letter-spacing: .02em; margin-bottom: 4px; }
+.zss-deadline-main { font-size: 14px; font-weight: 700; color: var(--ink); }
+.zss-deadline-main.warn { color: #d9822b; }
+.zss-deadline-main .sub { font-size: 12px; font-weight: 400; color: var(--muted); }
+.zss-deadline-body, .zss-deadline-note { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.zss-deadline-over { font-size: 12px; color: #d9822b; font-weight: 600; margin-top: 6px; line-height: 1.5; }
+
 /* --- 今日のデイリークエスト --- */
 .zss-quest {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;

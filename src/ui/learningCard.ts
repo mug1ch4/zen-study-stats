@@ -8,6 +8,7 @@ import { renderWeekdayBars } from '../charts/weekdayBars';
 import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements, getWorkTimes, getIncludeSupp, setIncludeSupp } from '../history';
 import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
 import { evaluateCalibration } from '../calibration';
+import { reportDeadlineStatus, type DeadlineStatus } from '../deadlines';
 import { zenMondayISO } from '../format';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, type Section } from '../analysis';
 import { buildPlanIcs, downloadText } from '../ics';
@@ -413,6 +414,13 @@ async function renderPredictTab(
     const lastWeekSum = lastWeek.reduce((a, p) => a + p.amount, 0);
     const weekEl = renderWeekGoal(pred, weekDone, weekGoal, lastWeek.length ? lastWeekSum : null);
 
+    // 月次レポート締切（年度末一発でなく、毎月の締切に追いつくのが成績上の実態）
+    const dstatus = reportDeadlineStatus(
+      report.months.map((m) => ({ year: m.year, month: m.month, deadline: m.deadline, total: m.total, passed: m.passed })),
+      Date.now()
+    );
+    const deadlineEl = renderNextDeadline(dstatus);
+
     // 予測スナップショット保存（1日1件）→ 的中率（キャリブレーション）評価
     if (pred.montecarlo && pred.remaining > 0) {
       const cps = [7, 14, 28]
@@ -428,7 +436,7 @@ async function renderPredictTab(
         : `予測の的中率: 検証データを蓄積中（予測と後日の実績の突き合わせ ${cal.n}/5件〜で表示）。`;
 
     pane.textContent = '';
-    pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayDone, { savedTarget, electivesNote, weekEl, calNote }));
+    pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayDone, { savedTarget, electivesNote, weekEl, calNote, deadlineEl }));
 
     // 通知（節目・デイリー達成）。永続dedupで繰り返さない。
     void notifyProgress(passed, total);
@@ -658,6 +666,42 @@ function questTargetOf(pred: Prediction): number {
   return isFinite(pred.requiredPerDay) ? Math.max(1, Math.ceil(pred.requiredPerDay)) : pred.remaining;
 }
 
+/** 月次レポート締切: 「次の締切」を主役に、締切超過（成績に影響）を警告。年度末一発でない実態を反映。 */
+function renderNextDeadline(st: DeadlineStatus): HTMLElement | null {
+  if (st.allClear && !st.next) {
+    return h('div', { class: 'zss-deadline ok' }, [
+      h('div', { class: 'zss-deadline-head' }, ['レポート締切']),
+      h('div', { class: 'zss-deadline-body' }, ['直近の締切ぶんは完了しています。次の締切が近づくと表示します。']),
+    ]);
+  }
+  const children: HTMLElement[] = [h('div', { class: 'zss-deadline-head' }, ['次のレポート締切'])];
+  if (st.next) {
+    const n = st.next;
+    const urgent = n.daysLeft <= 7 && n.remaining > 0;
+    children.push(
+      h('div', { class: 'zss-deadline-main' + (urgent ? ' warn' : '') }, [
+        h('b', {}, [`${md(n.deadline)}`]),
+        `　あと ${n.daysLeft}日`,
+        h('span', { class: 'sub' }, [`　· この締切の章 ${n.passed}/${n.total} 完了・残り ${n.remaining}章`]),
+      ])
+    );
+    children.push(
+      h('div', { class: 'zss-deadline-note' }, [
+        urgent ? '締切が近く未完の章があります。まずこの締切ぶんを優先しましょう。' : 'この締切に向けて計画的に進めましょう。',
+      ])
+    );
+  }
+  if (st.overdue.length) {
+    const totalOver = st.overdue.reduce((a, o) => a + o.remaining, 0);
+    children.push(
+      h('div', { class: 'zss-deadline-over' }, [
+        `⚠ 締切超過: ${st.overdue.map((o) => md(o.deadline)).join('・')} の締切に未完の章が計${totalOver}あります（成績に影響する場合があります）。`,
+      ])
+    );
+  }
+  return h('div', { class: 'zss-deadline' + (st.overdue.length ? ' warn' : '') }, children);
+}
+
 /** 週間目標: 週N教材の目標＋今週の進捗バー＋先週サマリ。日次の凸凹を吸収する中間粒度。
  *  目標は締切に間に合う最低ペース（義務週）以上のみ設定可（デイリー/教材数プランナーと同思想）。 */
 function renderWeekGoal(pred: Prediction, weekDone: number, savedGoal: number | null, lastWeekSum: number | null): HTMLElement | null {
@@ -746,7 +790,7 @@ function renderPredictorSection(
   actual: { date: string; remaining: number }[],
   tip: Tooltip,
   todayAmount: number,
-  opts: { savedTarget: string | null; electivesNote: string; weekEl?: HTMLElement | null; calNote?: string }
+  opts: { savedTarget: string | null; electivesNote: string; weekEl?: HTMLElement | null; calNote?: string; deadlineEl?: HTMLElement | null }
 ): HTMLElement {
   // 見出しの判定（モンテカルロの確率・パーセンタイルを主に）
   let verdict: HTMLElement;
@@ -968,6 +1012,7 @@ function renderPredictorSection(
     legendHost,
   ];
   return h('div', { class: 'zss-section' }, [
+    ...(opts.deadlineEl ? [opts.deadlineEl] : []),
     ...(quest ? [quest] : []),
     ...(opts.weekEl ? [opts.weekEl] : []),
     ...chartBlock,
