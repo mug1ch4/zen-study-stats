@@ -6,7 +6,7 @@ import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
 import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart } from '../history';
-import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, type Section } from '../analysis';
+import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, type Section } from '../analysis';
 import { motivationNudges, type Nudge } from '../motivation';
 import { countUp } from '../anim';
 import { notifyProgress, notifyQuest } from '../notify';
@@ -438,6 +438,8 @@ async function renderAnalysisTab(
 
     const sections: Section[] = [
       requiredAdvice(courses, report, recentPerDay),
+      trendTendency(merged),
+      distributionSummary(merged),
       weekdayTendency(merged),
       timeOfDayTendency(hour),
       monthlyTendency(merged),

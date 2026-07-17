@@ -5,6 +5,11 @@ import { isHoliday } from './holidays';
 import { parseDate } from './format';
 import type { CourseMaterial } from './courseApi';
 import type { ReportProgress } from './api';
+import { mean as smean, median, quantile, linreg, mannKendall, kruskalWallis, lag1Autocorr, burstiness, paretoShare } from './stats';
+
+const fmtP = (p: number): string => (p < 0.001 ? 'p<0.001' : p < 0.01 ? 'p<0.01' : `p=${p.toFixed(2)}`);
+const effLabel = (eta2: number): string => (eta2 >= 0.14 ? '効果量 大' : eta2 >= 0.06 ? '効果量 中' : '効果量 小');
+const r2dp = (n: number): string => (Math.round(n * 100) / 100).toFixed(2);
 
 export interface Insight {
   kind: 'good' | 'warn' | 'note';
@@ -43,6 +48,15 @@ export function weekdayTendency(series: Series): Section {
       kind: p < 70 ? 'warn' : 'note',
       text: `平日 平均 ${r1(mean(wk))}件 / 週末 平均 ${r1(mean(we))}件（週末は平日の ${p}%）。${p < 70 ? '週末に失速しがちです。' : p > 120 ? '週末型ですね。' : 'バランス良好。'}`,
     });
+  }
+  // 有意性: 曜日差が統計的に本物かノイズか（Kruskal-Wallis）。小標本の過信を防ぐ。
+  const kw = kruskalWallis(byWd);
+  if (kw.k >= 3 && kw.n >= 14) {
+    insights.push(
+      kw.p < 0.05
+        ? { kind: 'note', text: `※曜日差は統計的に有意（${fmtP(kw.p)}・${effLabel(kw.eta2)}）。傾向として信頼できます。` }
+        : { kind: 'note', text: `※現時点では曜日差は誤差の範囲（${fmtP(kw.p)}）。日数が増えると精度が上がります。` }
+    );
   }
   return { title: '曜日のリズム', insights };
 }
@@ -101,7 +115,74 @@ export function consistencyTendency(series: Series): Section {
     text: cv < 0.6 ? 'コツコツ型（日々の量が安定しています）。' : cv > 1.1 ? 'ムラ型（まとめてやる傾向。安定させると予測が当たりやすくなります）。' : '標準的なばらつきです。',
   });
   insights.push({ kind: studiedRate >= 70 ? 'good' : 'note', text: `学習日率 ${studiedRate}%（記録のある日のうち学習した日）。` });
+
+  // 学習日の間隔から: 最長の空白 ＋ バースト度（タイミングがまとまっているか）
+  const studyTimes = series.filter((p) => p.amount > 0).map((p) => parseDate(p.date).getTime()).sort((a, b) => a - b);
+  const gaps: number[] = [];
+  for (let i = 1; i < studyTimes.length; i++) gaps.push(Math.round((studyTimes[i] - studyTimes[i - 1]) / 86400000));
+  const maxGap = gaps.length ? Math.max(...gaps) : 0;
+  if (maxGap >= 3) {
+    insights.push({ kind: maxGap >= 7 ? 'warn' : 'note', text: `最長 ${maxGap}日の学習空白がありました。${maxGap >= 7 ? '長い中断は取り戻しが大変。短めに留めましょう。' : ''}` });
+  }
+  const B = burstiness(gaps);
+  if (B !== null && Math.abs(B) >= 0.15) {
+    insights.push({
+      kind: 'note',
+      text: B > 0.15 ? `学習のタイミングは「まとめて型」寄り（バースト度 ${r2dp(B)}）。` : `規則的なリズムで学習できています（バースト度 ${r2dp(B)}）。`,
+    });
+  }
   return { title: '継続の傾向', insights };
+}
+
+/** トレンド（伸びているか）: 線形回帰の傾き＋Mann-Kendall検定＋週モメンタム＋好日の連鎖(自己相関)。 */
+export function trendTendency(series: Series): Section {
+  if (series.length < 14) return { title: 'トレンド（伸びているか）', insights: [{ kind: 'note', text: '2週間ぶん貯まるとトレンドを判定します。' }] };
+  const vals = series.map((p) => p.amount);
+  const lr = linreg(vals);
+  const mk = mannKendall(vals);
+  const perWeek = lr.slope * 7; // 1日あたりの傾き → 週あたり
+  const insights: Insight[] = [];
+  if (mk.trend === 'up') {
+    insights.push({ kind: 'good', text: `上昇トレンド（週あたり約 +${r1(perWeek)}件のペースで増加・統計的に有意）。良い流れです。` });
+  } else if (mk.trend === 'down') {
+    insights.push({ kind: 'warn', text: `下降トレンド（週あたり約 ${r1(perWeek)}件で減少・統計的に有意）。ペースを立て直しましょう。` });
+  } else {
+    insights.push({ kind: 'note', text: `明確な増減トレンドは無く、ほぼ横ばいです（週あたり ${perWeek >= 0 ? '+' : ''}${r1(perWeek)}件）。` });
+  }
+  // 週モメンタム: 直近7日 vs その前3週
+  const last7 = vals.slice(-7);
+  const prev3w = vals.slice(-28, -7);
+  if (last7.length >= 3 && prev3w.length >= 3) {
+    const a = smean(last7), b = smean(prev3w);
+    const ch = b > 0 ? Math.round((a / b - 1) * 100) : null;
+    if (ch !== null) insights.push({ kind: ch <= -15 ? 'warn' : ch >= 15 ? 'good' : 'note', text: `直近1週は 平均 ${r1(a)}件（その前3週比 ${ch >= 0 ? '+' : ''}${ch}%）。${ch >= 15 ? '加速中。' : ch <= -15 ? '失速気味。' : '横ばい。'}` });
+  }
+  // ラグ1自己相関: 好調が続きやすいか（習慣の粘り）
+  const ac = lag1Autocorr(vals);
+  if (Math.abs(ac) >= 0.2) {
+    insights.push(
+      ac > 0
+        ? { kind: 'good', text: `勢いが続きやすいタイプ（前日が多いと翌日も多め・自己相関 ${r2dp(ac)}）。連続を活かせています。` }
+        : { kind: 'note', text: `反動が出やすいタイプ（多い日の翌日は減りがち・自己相関 ${r2dp(ac)}）。ならすと安定します。` }
+    );
+  }
+  return { title: 'トレンド（伸びているか）', insights };
+}
+
+/** 普段と好調（分布）: 中央値＝普段の1日、上位1割＝好調日、0の日、上位集中度（パレート）。 */
+export function distributionSummary(series: Series): Section {
+  if (series.length < 10) return { title: '普段と好調（分布）', insights: [{ kind: 'note', text: '記録が増えると学習量の分布を表示します。' }] };
+  const vals = series.map((p) => p.amount);
+  const med = median(vals);
+  const p90 = quantile(vals, 0.9);
+  const zeroDays = vals.filter((v) => v === 0).length;
+  const zeroPct = pct(zeroDays, vals.length);
+  const insights: Insight[] = [];
+  insights.push({ kind: 'note', text: `普段の1日は ${r1(med)}件（中央値）。調子のいい日で ${r1(p90)}件（上位1割）。` });
+  insights.push({ kind: zeroPct >= 30 ? 'warn' : 'note', text: `学習0の日は ${zeroDays}日（${zeroPct}%）。` });
+  const share = Math.round(paretoShare(vals, 0.2) * 100);
+  if (share > 0) insights.push({ kind: share >= 60 ? 'warn' : 'note', text: `上位2割の日で全体の ${share}% を消化。${share >= 60 ? '一部の日に偏りがち。ならすと安定します。' : '比較的ならされています。'}` });
+  return { title: '普段と好調（分布）', insights };
 }
 
 /** 時間帯: 自前記録(hourStats)から、学習が進む/よく開く時間帯。 */
