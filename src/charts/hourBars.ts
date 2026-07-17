@@ -1,7 +1,7 @@
 import { s } from '../dom';
 import type { Tooltip } from '../ui/tooltip';
 
-const W = 720, H = 170, L = 10, R = 10, T = 24, B = 24;
+const W = 720, H = 134, L = 10, R = 10, T = 18, B = 24;
 const PLOT_W = W - L - R;
 const PLOT_H = H - T - B;
 const BASE_Y = T + PLOT_H;
@@ -25,6 +25,7 @@ export function renderHourBars(study: number[], tip: Tooltip): SVGElement {
       svg.appendChild(s('rect', {
         x: cx - barW / 2, y: BASE_Y - bh, width: barW, height: bh, rx: 2,
         fill: hStart === peak ? 'var(--primary-strong)' : 'var(--primary)',
+        class: 'zss-abar', style: `animation-delay:${hStart * 16}ms`,
       }));
     }
     // 目盛ラベルは 0/6/12/18/23 のみ

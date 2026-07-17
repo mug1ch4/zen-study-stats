@@ -3,6 +3,7 @@ import { durationStr } from '../format';
 import { h } from '../dom';
 import { dataTable } from './dataTable';
 import { renderDonut } from '../charts/donut';
+import { renderBreakdownDonut } from '../charts/donutBreakdown';
 
 /** 教科の統合ビュー（残/総: 教材・動画時間・本数・テスト・レポート）。残の多い順。 */
 export function renderSubjects(courses: CourseVol[]): HTMLElement {
@@ -27,6 +28,12 @@ export function renderSubjects(courses: CourseVol[]): HTMLElement {
       ]),
     ])
   );
+
+  // 教科別の残り学習量シェア（色分けドーナツ）。残があるときのみ。
+  const breakdown = renderBreakdownDonut(courses);
+  if (breakdown) {
+    wrap.appendChild(sectionCard('教科別の残り学習量シェア', breakdown));
+  }
 
   // 残の多い順
   const sorted = [...courses].sort((a, b) => remMat(b) - remMat(a));
@@ -108,6 +115,12 @@ function sum(courses: CourseVol[], pick: (c: CourseVol) => Metrics): Metrics {
     },
     { movieSeconds: 0, movieCount: 0, testCount: 0, reportCount: 0 }
   );
+}
+function sectionCard(title: string, body: HTMLElement): HTMLElement {
+  return h('div', { class: 'zss-section' }, [
+    h('div', { class: 'zss-section-head' }, [h('div', { class: 'zss-section-title' }, [title])]),
+    body,
+  ]);
 }
 function chip(label: string, value: string): HTMLElement {
   return h('span', { class: 'zss-vol-chip' }, [h('span', { class: 'l' }, [label]), h('span', { class: 'v' }, [value])]);

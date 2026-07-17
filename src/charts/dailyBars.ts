@@ -3,7 +3,7 @@ import { s } from '../dom';
 import { shortDate, weekdayLabel, signed } from '../format';
 import type { Tooltip } from '../ui/tooltip';
 
-const W = 720, H = 240, L = 10, R = 10, T = 30, B = 26;
+const W = 720, H = 194, L = 10, R = 10, T = 24, B = 22;
 const PLOT_W = W - L - R;
 const PLOT_H = H - T - B;
 const BASE_Y = T + PLOT_H;
@@ -54,11 +54,13 @@ export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip):
       const bh = Math.max(scale(d.amount), 2);
       svg.appendChild(s('rect', {
         x: cx - barW / 2, y: BASE_Y - bh, width: barW, height: bh, rx: 3, fill: 'var(--primary)',
+        class: 'zss-abar', style: `animation-delay:${i * 24}ms`,
       }));
       if (isToday) {
         svg.appendChild(s('rect', {
           x: cx - barW / 2 - 2, y: BASE_Y - bh - 2, width: barW + 4, height: bh + 2, rx: 4,
           fill: 'none', stroke: 'var(--primary-strong)', 'stroke-width': 2,
+          class: 'zss-abar', style: `animation-delay:${i * 24}ms`,
         }));
       }
       // 直接ラベル: 最高日 / 今日 のみ

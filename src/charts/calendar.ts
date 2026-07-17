@@ -55,6 +55,7 @@ export function renderCalendar(data: CalendarData, tip: Tooltip): SVGElement {
     const y = TOP + c.weekday * STEP;
     const rect = s('rect', {
       x, y, width: CELL, height: CELL, rx: 2, fill: fillFor(c.amount, data.max),
+      class: 'zss-acell', style: `animation-delay:${c.week * 12}ms`, // 列（週）ごとに左から
       onmousemove: (e: Event) => {
         const me = e as MouseEvent;
         const d = parseDate(c.date);

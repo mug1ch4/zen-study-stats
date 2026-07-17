@@ -3,7 +3,7 @@ import { s } from '../dom';
 import { weekdayLabelByIndex, shortDate } from '../format';
 import type { Tooltip } from '../ui/tooltip';
 
-const W = 720, H = 170, L = 10, R = 10, T = 24, B = 22;
+const W = 720, H = 132, L = 10, R = 10, T = 18, B = 22;
 const PLOT_W = W - L - R;
 const PLOT_H = H - T - B;
 const BASE_Y = T + PLOT_H;
@@ -33,6 +33,7 @@ export function renderWeekdayBars(stats: WeekdayStat[], tip: Tooltip): SVGElemen
       const bh = Math.max(scale(val), 2);
       svg.appendChild(s('rect', {
         x: cx - barW / 2, y: BASE_Y - bh, width: barW, height: bh, rx: 3, fill: 'var(--primary)',
+        class: 'zss-abar', style: `animation-delay:${i * 30}ms`,
       }));
       const label = Number.isInteger(val) ? String(val) : val.toFixed(1);
       svg.appendChild(s('text', {

@@ -2,7 +2,7 @@ import type { TrendPoint, TrendMode } from '../deriveHistory';
 import { s } from '../dom';
 import type { Tooltip } from '../ui/tooltip';
 
-const W = 720, H = 200, L = 28, R = 10, T = 12, B = 24;
+const W = 720, H = 162, L = 28, R = 10, T = 12, B = 24;
 const PLOT_W = W - L - R;
 const PLOT_H = H - T - B;
 const BASE_Y = T + PLOT_H;
@@ -33,7 +33,7 @@ export function renderTrend(points: TrendPoint[], mode: TrendMode, tip: Tooltip)
 
   // 値ライン
   const linePts = points.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
-  svg.appendChild(s('polyline', { points: linePts, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  svg.appendChild(s('polyline', { points: linePts, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', pathLength: 1, class: 'zss-adraw' }));
 
   // マーカー（点が少ない時のみ）
   if (n <= 40) {

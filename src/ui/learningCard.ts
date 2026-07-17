@@ -8,6 +8,7 @@ import { renderWeekdayBars } from '../charts/weekdayBars';
 import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart } from '../history';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, type Section } from '../analysis';
 import { motivationNudges, type Nudge } from '../motivation';
+import { countUp } from '../anim';
 import { notifyProgress, notifyQuest } from '../notify';
 import { fetchReportProgresses } from '../api';
 import { fetchCourseMaterials } from '../courseApi';
@@ -34,11 +35,11 @@ export function renderLearningCard(data: LearningAmounts): HTMLElement {
   const todayAmount = today?.amount ?? 0;
 
   // コンパクトな要点ストリップ（累計＋今日＋平均＋連続）。大きなグラフは詳細タブへ。
-  const stat = (value: string, label: string, big = false) =>
-    h('div', { class: 'zss-stat' + (big ? ' big' : '') }, [
-      h('div', { class: 'v' }, [value]),
-      h('div', { class: 'l' }, [label]),
-    ]);
+  const stat = (value: string, label: string, big = false) => {
+    const v = h('div', { class: 'v' }, []);
+    countUp(v, value); // 0→値へカウントアップ（reduced-motion では即確定）
+    return h('div', { class: 'zss-stat' + (big ? ' big' : '') }, [v, h('div', { class: 'l' }, [label])]);
+  };
 
   const card = h('div', { class: 'zss-card' }, [
     h('div', { class: 'zss-head' }, [
@@ -135,13 +136,8 @@ async function renderRecentTab(
 ): Promise<void> {
   // --- 直近14日（data から即描画） ---
   pane.appendChild(
-    section('日別の学習数', '2週平均を基準線に', [
+    section('日別の学習数', '2週平均を基準線に · 棒=学習あり／薄い印=0／破線=記録なし', [
       wrapChart(renderDailyBars(data.daily_amount, data.average_amount, tip)),
-      h('div', { class: 'zss-legend' }, [
-        legendItem('var(--primary)', '学習あり'),
-        legendItem('var(--faint)', '学習0'),
-        dashLegend('記録なし'),
-      ]),
       dataTable(
         'データを表で見る',
         ['日付', '曜日', '学習数'],
@@ -153,75 +149,121 @@ async function renderRecentTab(
       ),
     ])
   );
-  pane.appendChild(
-    section('曜日別のリズム', '各曜日 = 2週ぶんの平均', [wrapChart(renderWeekdayBars(computeWeekdayStats(data), tip))])
-  );
-
-  // --- 長期（自前蓄積・非同期） ---
-  const longWrap = h('div', {}, [h('div', { class: 'zss-empty' }, ['長期データを読み込み中…'])]);
+  // --- 長期（自前蓄積・非同期） ＋ 曜日リズム（直近2週） ---
+  const longWrap = h('div', {}, [h('div', { class: 'zss-empty' }, ['読み込み中…'])]);
   pane.appendChild(longWrap);
   const series = await getSeriesOnce();
   longWrap.textContent = '';
-  if (series.length === 0) {
+  const hasLong = series.length > 0;
+
+  // 記録メタ（開始日・日数・最長連続を1行に集約）。現在の連続はカード上部の要点(連続学習)と重複するため省く。
+  if (hasLong) {
+    const streak = streakInfo(series);
+    const metaBits: string[] = [];
+    const first = series[0]?.date;
+    if (first) {
+      const d = new Date(first + 'T12:00:00');
+      metaBits.push(`${d.getMonth() + 1}月${d.getDate()}日から記録中`);
+    }
+    metaBits.push(`${series.length}日ぶん`);
+    metaBits.push(`最長の連続 ${streak.longest}日`);
+    longWrap.appendChild(h('div', { class: 'zss-badge-grow' }, [metaBits.join(' · ')]));
+  } else {
     longWrap.appendChild(
-      h('div', { class: 'zss-empty' }, ['長期の記録はこれから。ZEN Studyを開いた日ごとに自動で貯まり、カレンダーやトレンドが育ちます。'])
-    );
-    return;
-  }
-  const first = series[0]?.date;
-  if (first) {
-    const d = new Date(first + 'T12:00:00');
-    longWrap.appendChild(
-      h('div', { class: 'zss-badge-grow' }, [`${d.getMonth() + 1}月${d.getDate()}日から記録中 · ${series.length}日ぶん`])
+      h('div', { class: 'zss-tsub-note' }, ['長期の記録はこれから（開いた日ごとに自動で貯まります）。曜日の傾向は直近2週から表示。'])
     );
   }
-  const streak = streakInfo(series);
-  longWrap.appendChild(
-    h('div', { class: 'zss-kpis' }, [kpiTile(`${streak.current}日`, '現在の連続'), kpiTile(`${streak.longest}日`, '最長の連続')])
-  );
-  const cal = calendarData(series);
-  longWrap.appendChild(
-    sectionEl('学習カレンダー', '記録が増えるほど埋まります', [h('div', { class: 'zss-cal-wrap' }, [renderCalendar(cal, tip)]), calLegend()])
-  );
-  let mode: TrendMode = 'day';
-  const trendChart = h('div', { class: 'zss-chart' }, [renderTrend(trendPoints(series, mode), mode, tip)]);
-  const seg = h('div', { class: 'zss-seg' }, [] as HTMLElement[]);
-  const modes: [TrendMode, string][] = [['day', '日'], ['week', '週'], ['month', '月']];
+
+  // 長期チャートはセグメントで1枚ずつ表示（縦積みを回避）: カレンダー / トレンド / 時間帯 / 曜日。
+  const longView = h('div', {}, []);
+  const views: [string, string][] = [['cal', 'カレンダー'], ['trend', 'トレンド'], ['hour', '時間帯'], ['weekday', '曜日']];
   const segBtns: HTMLElement[] = [];
-  for (const [m, label] of modes) {
-    const b = h('button', m === mode ? { class: 'on' } : {}, [label]);
-    b.addEventListener('click', () => {
-      mode = m;
-      segBtns.forEach((x, i) => x.classList.toggle('on', modes[i][0] === mode));
-      trendChart.textContent = '';
-      trendChart.appendChild(renderTrend(trendPoints(series, mode), mode, tip));
-    });
+  const cache: Record<string, HTMLElement> = {};
+  let curView = hasLong ? 'cal' : 'weekday';
+
+  const buildCal = (): HTMLElement =>
+    hasLong
+      ? h('div', {}, [
+          h('div', { class: 'zss-tsub-note' }, ['記録が増えるほど埋まります']),
+          h('div', { class: 'zss-cal-wrap' }, [renderCalendar(calendarData(series), tip)]),
+          calLegend(),
+        ])
+      : h('div', { class: 'zss-empty' }, ['記録が数日貯まるとカレンダーが表示されます。']);
+
+  const buildWeekday = (): HTMLElement =>
+    h('div', {}, [
+      h('div', { class: 'zss-tsub-note' }, ['各曜日 = 直近2週ぶんの平均']),
+      wrapChart(renderWeekdayBars(computeWeekdayStats(data), tip)),
+    ]);
+
+  const buildTrend = (): HTMLElement => {
+    if (!hasLong) return h('div', { class: 'zss-empty' }, ['記録が数日貯まるとトレンドが表示されます。']);
+    let mode: TrendMode = 'week'; // 直近14日の日別バーと差別化して既定は週合計
+    const trendChart = h('div', { class: 'zss-chart' }, [renderTrend(trendPoints(series, mode), mode, tip)]);
+    const seg = h('div', { class: 'zss-seg' }, [] as HTMLElement[]);
+    const modes: [TrendMode, string][] = [['day', '日'], ['week', '週'], ['month', '月']];
+    const btns: HTMLElement[] = [];
+    for (const [m, label] of modes) {
+      const b = h('button', m === mode ? { class: 'on' } : {}, [label]);
+      b.addEventListener('click', () => {
+        mode = m;
+        btns.forEach((x, i) => x.classList.toggle('on', modes[i][0] === mode));
+        trendChart.textContent = '';
+        trendChart.appendChild(renderTrend(trendPoints(series, mode), mode, tip));
+      });
+      btns.push(b);
+      seg.appendChild(b);
+    }
+    return h('div', {}, [h('div', { class: 'zss-tsub' }, [seg]), trendChart]);
+  };
+
+  const buildHour = async (): Promise<HTMLElement> => {
+    const hs = await getHourStats();
+    return hs.study.reduce((a, b) => a + b, 0) > 0
+      ? h('div', {}, [
+          h('div', { class: 'zss-tsub-note' }, ['学習が進む時間帯（完了検知でその時刻を記録・自動更新）']),
+          wrapChart(renderHourBars(hs.study, tip)),
+        ])
+      : h('div', { class: 'zss-empty' }, ['PCで動画/テスト等を完了すると、その時刻を記録します（数回で傾向が出ます）。']);
+  };
+
+  const showView = async (v: string): Promise<void> => {
+    curView = v;
+    segBtns.forEach((x, i) => x.classList.toggle('on', views[i][0] === v));
+    if (!cache[v]) {
+      cache[v] =
+        v === 'hour' ? await buildHour()
+        : v === 'trend' ? buildTrend()
+        : v === 'weekday' ? buildWeekday()
+        : buildCal();
+    }
+    longView.textContent = '';
+    longView.appendChild(cache[v]);
+  };
+
+  const segOuter = h('div', { class: 'zss-seg' }, [] as HTMLElement[]);
+  for (const [v, label] of views) {
+    const b = h('button', {}, [label]);
+    b.addEventListener('click', () => void showView(v));
     segBtns.push(b);
-    seg.appendChild(b);
+    segOuter.appendChild(b);
   }
   longWrap.appendChild(
     h('div', { class: 'zss-section' }, [
-      h('div', { class: 'zss-section-head' }, [h('div', { class: 'zss-section-title' }, ['学習数トレンド']), seg]),
-      trendChart,
+      h('div', { class: 'zss-section-head' }, [h('div', { class: 'zss-section-title' }, ['傾向グラフ']), segOuter]),
+      longView,
     ])
   );
+  await showView(curView);
 
-  // 時間帯トレンド（完了検知でライブ更新: content.ts が確定分の下流で zss:hourupdate を発火）
-  const hourWrap = h('div', {}, []);
-  longWrap.appendChild(hourWrap);
-  const renderHour = async (): Promise<void> => {
-    const hs = await getHourStats();
-    hourWrap.textContent = '';
-    hourWrap.appendChild(
-      hs.study.reduce((a, b) => a + b, 0) > 0
-        ? sectionEl('時間帯トレンド', '学習が進む時間帯（完了検知でその時刻を記録・自動更新）', [wrapChart(renderHourBars(hs.study, tip))])
-        : sectionEl('時間帯トレンド', '自前計測', [h('div', { class: 'zss-empty' }, ['PCで動画/テスト等を完了すると、その時刻を記録します（数回で傾向が出ます）。'])])
-    );
-  };
-  await renderHour();
+  // 時間帯は完了検知でライブ更新（表示中のときのみ再描画）。
   const onHourUpdate = (): void => {
-    if (hourWrap.isConnected) void renderHour();
-    else window.removeEventListener('zss:hourupdate', onHourUpdate); // カード破棄後は自動解除
+    if (!longView.isConnected) {
+      window.removeEventListener('zss:hourupdate', onHourUpdate);
+      return;
+    }
+    delete cache['hour'];
+    if (curView === 'hour') void showView('hour');
   };
   window.addEventListener('zss:hourupdate', onHourUpdate);
 }
@@ -333,9 +375,13 @@ async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<Co
     const courses = await getCourses();
     pane.textContent = '';
     const tierA = renderSubjectRemaining(courses);
-    pane.appendChild(tierA);
     const volBody = h('div', {}, []);
-    const volBtn = h('button', { class: 'zss-details-toggle' }, ['動画時間・テスト・レポートの残/総を集計する']) as HTMLButtonElement;
+    // 詳細（教科別シェアの色分けドーナツ・動画時間/テスト/レポートの内訳）はボタン押下で集計。
+    // 全章を舐めるため既定では出さず、押すと詳細グラフを表示する旨を明記。
+    const volBtn = h('button', { class: 'zss-details-toggle' }, ['教科別シェアなど詳細グラフを表示']) as HTMLButtonElement;
+    const volNote = h('div', { class: 'zss-vol-hint' }, [
+      '押すと、教科別の残り学習量シェア（色分けドーナツ）と、動画時間・確認テスト・レポートの残/総の内訳を表示します。全章を集計するため少し時間がかかります。',
+    ]);
     volBtn.addEventListener('click', () => {
       volBtn.disabled = true;
       volBtn.textContent = '集計中…';
@@ -343,6 +389,7 @@ async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<Co
         .then((vols) => {
           tierA.remove();
           volBtn.remove();
+          volNote.remove();
           volBody.appendChild(renderSubjects(vols));
         })
         .catch((e) => {
@@ -351,7 +398,10 @@ async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<Co
           volBtn.textContent = '集計する（再試行）';
         });
     });
+    // ボタンを上部に配置（詳細グラフへの入口を目立たせる）
     pane.appendChild(volBtn);
+    pane.appendChild(volNote);
+    pane.appendChild(tierA);
     pane.appendChild(volBody);
   } catch (e) {
     console.warn('[ZSS] 教科データ取得失敗:', e);
@@ -646,8 +696,23 @@ function renderPredictorSection(
 
   const analysisEl = renderAnalysis(pred);
   const quest = renderDailyQuest(pred, todayAmount);
+  // 実績・完了見込みグラフ（今日の目標の直下に配置）
+  const chartBlock = [
+    h('div', { class: 'zss-section-head' }, [
+      h('div', { class: 'zss-section-title' }, ['実績・完了見込み']),
+      h('div', { class: 'zss-section-note' }, [`締切 ${md(pred.finalDeadline)}`]),
+    ]),
+    h('div', { class: 'zss-chart' }, [renderBurndown(pred, actual, tip)]),
+    h('div', { class: 'zss-cal-legend' }, [
+      legendLine('var(--muted)', '必要ライン'),
+      legendLine(pred.onTrack ? 'var(--success)' : '#d9822b', '予測(帯=P15〜85)'),
+      legendItem('var(--primary)', '実績'),
+      ...(pred.montecarlo ? [legendLine('#e5484d', '完了見込み'), legendItem('#6f5cc4', '完了分布')] : []),
+    ]),
+  ];
   return h('div', { class: 'zss-section' }, [
     ...(quest ? [quest] : []),
+    ...chartBlock,
     h('div', { class: 'zss-section-head' }, [
       h('div', { class: 'zss-section-title' }, ['年度レポート完了予測']),
       h('div', { class: 'zss-section-note' }, [`教材消化ペースで算出 · 締切 ${md(pred.finalDeadline)}`]),
@@ -663,13 +728,6 @@ function renderPredictorSection(
     ...(analysisEl ? [analysisEl] : []),
     targetBox,
     h('div', { class: 'zss-pred-caveat' }, [opts.electivesNote]),
-    h('div', { class: 'zss-chart' }, [renderBurndown(pred, actual, tip)]),
-    h('div', { class: 'zss-cal-legend' }, [
-      legendLine('var(--muted)', '必要ライン'),
-      legendLine(pred.onTrack ? 'var(--success)' : '#d9822b', '予測(帯=P15〜85)'),
-      legendItem('var(--primary)', '実績'),
-      ...(pred.montecarlo ? [legendLine('#e5484d', '完了見込み'), legendItem('#9b8bd4', '完了分布')] : []),
-    ]),
     ...(pred.montecarlo
       ? [
           dataTable('予測データを表で見る', ['指標', '値'], [
@@ -772,10 +830,6 @@ function calLegend(): HTMLElement {
   ]);
 }
 
-function sectionEl(title: string, note: string, children: (HTMLElement | SVGElement)[]): HTMLElement {
-  return section(title, note, children);
-}
-
 function section(title: string, note: string, children: (HTMLElement | SVGElement)[]): HTMLElement {
   return h('div', { class: 'zss-section' }, [
     h('div', { class: 'zss-section-head' }, [
@@ -796,8 +850,3 @@ function legendItem(color: string, label: string): HTMLElement {
   return h('span', {}, [sw, label]);
 }
 
-function dashLegend(label: string): HTMLElement {
-  const sw = h('span', { class: 'zss-swatch' }, []);
-  sw.style.cssText = 'background: none; border-left: 2px dashed var(--faint); border-radius: 0; width: 4px;';
-  return h('span', {}, [sw, label]);
-}

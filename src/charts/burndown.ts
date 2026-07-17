@@ -59,10 +59,15 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip): SVGEl
     const distH = PLOT_H * 0.3; // 控えめな高さ
     const dayW = PLOT_W / (span / DAY);
     const bw = Math.max(1, dayW * 0.85);
+    const offsets = [...counts.keys()].sort((a, b) => a - b);
+    const minOff = offsets[0] ?? 0;
     for (const [off, c] of counts) {
       const cx = x(nm + off * DAY);
       const hgt = (c / maxC) * distH;
-      svg.appendChild(s('rect', { x: cx - bw / 2, y: BASE_Y - hgt, width: bw, height: hgt, rx: 0.5, fill: '#9b8bd4', opacity: 0.35 }));
+      svg.appendChild(s('rect', {
+        x: cx - bw / 2, y: BASE_Y - hgt, width: bw, height: hgt, rx: 0.5, fill: '#6f5cc4', opacity: 0.55,
+        class: 'zss-abar', style: `animation-delay:${300 + (off - minOff) * 10}ms`, // 中央帯の後に左から
+      }));
     }
   }
 
@@ -94,6 +99,7 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip): SVGEl
   svg.appendChild(s('line', {
     x1: x(nowT), y1: y(p.remaining), x2: dx, y2: y(0),
     stroke: 'var(--muted)', 'stroke-width': 1.5, 'stroke-dasharray': '4 4',
+    class: 'zss-afade', style: 'animation-delay:250ms',
   }));
 
   const col = p.onTrack ? 'var(--success)' : '#d9822b';
@@ -109,29 +115,31 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip): SVGEl
     const bx = (d: number) => x(nowMs + d * DAY);
     const upper = band.map((b) => `${bx(b.dayOffset).toFixed(1)},${y(b.p85).toFixed(1)}`);
     const lower = band.map((b) => `${bx(b.dayOffset).toFixed(1)},${y(b.p15).toFixed(1)}`).reverse();
-    svg.appendChild(s('polygon', { points: [...upper, ...lower].join(' '), fill: col, opacity: 0.15, stroke: 'none' }));
+    // 半透明の帯（P15〜85）。フェードは最終不透明度0.15で止める（--fo）。中央値線はこの上に重ねる。
+    svg.appendChild(s('polygon', { points: [...upper, ...lower].join(' '), fill: col, opacity: 0.15, stroke: 'none', class: 'zss-afade', style: 'animation-delay:150ms;--fo:0.15' }));
     const median = band.map((b) => `${bx(b.dayOffset).toFixed(1)},${y(b.p50).toFixed(1)}`).join(' ');
-    svg.appendChild(s('polyline', { points: median, fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    svg.appendChild(s('polyline', { points: median, fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));
 
     // 完了見込み区間（P15〜P85）を横軸に赤線で明示
     const RED = '#e5484d';
     const x15 = x(p.montecarlo.p15.getTime());
     const x85 = x(p.montecarlo.p85.getTime());
-    svg.appendChild(s('line', { x1: x15, y1: BASE_Y, x2: x85, y2: BASE_Y, stroke: RED, 'stroke-width': 3 }));
+    // レンジ線は中央から左右へ伸び、端キャップ＋ラベルは少し遅れて現れる（中央帯の描画後）
+    svg.appendChild(s('line', { x1: x15, y1: BASE_Y, x2: x85, y2: BASE_Y, stroke: RED, 'stroke-width': 3, class: 'zss-agrow-x', style: 'animation-delay:750ms' }));
     for (const xx of [x15, x85]) {
-      svg.appendChild(s('line', { x1: xx, y1: BASE_Y - 4, x2: xx, y2: BASE_Y + 4, stroke: RED, 'stroke-width': 2 }));
+      svg.appendChild(s('line', { x1: xx, y1: BASE_Y - 4, x2: xx, y2: BASE_Y + 4, stroke: RED, 'stroke-width': 2, class: 'zss-afade', style: 'animation-delay:950ms' }));
     }
-    svg.appendChild(s('text', { x: (x15 + x85) / 2, y: BASE_Y - 6, 'text-anchor': 'middle', 'font-size': 9, fill: RED, 'font-weight': 700 }, ['完了見込み']));
+    svg.appendChild(s('text', { x: (x15 + x85) / 2, y: BASE_Y - 6, 'text-anchor': 'middle', 'font-size': 9, fill: RED, 'font-weight': 700, class: 'zss-afade', style: 'animation-delay:1000ms' }, ['完了見込み']));
   } else if (p.projectionCurve.length > 1) {
     // フォールバック: 曜日/祝日カーブ
     const pts = p.projectionCurve.map((c) => `${x(parseDate(c.date).getTime()).toFixed(1)},${y(c.remaining).toFixed(1)}`).join(' ');
-    svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));
   }
 
   // 実績（日次・再構成）
   if (actual.length > 1) {
     const pts = actual.map((c) => `${x(parseDate(c.date).getTime()).toFixed(1)},${y(c.remaining).toFixed(1)}`).join(' ');
-    svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));
     for (const c of actual) {
       svg.appendChild(s('circle', {
         cx: x(parseDate(c.date).getTime()), cy: y(c.remaining), r: 2, fill: 'var(--primary)',
@@ -144,8 +152,11 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip): SVGEl
       }));
     }
   }
-  // 現在点
-  svg.appendChild(s('circle', { cx: x(nowT), cy: y(p.remaining), r: 3.5, fill: 'var(--primary)', stroke: 'var(--surface)', 'stroke-width': 1.5 }));
+  // 現在点（バーンダウンの起点。線が描かれた後にポップ）
+  svg.appendChild(s('circle', {
+    cx: x(nowT), cy: y(p.remaining), r: 3.5, fill: 'var(--primary)', stroke: 'var(--surface)', 'stroke-width': 1.5,
+    class: 'zss-acell', style: 'animation-delay:900ms',
+  }));
 
   return svg;
 }

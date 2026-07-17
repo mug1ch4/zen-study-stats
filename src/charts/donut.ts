@@ -1,4 +1,5 @@
 import { s } from '../dom';
+import { countUp } from '../anim';
 
 /**
  * 単一割合（passed/total）のドーナツ・ゲージ。中央に完了%。
@@ -34,16 +35,18 @@ export function renderDonut(passed: number, total: number, opts?: { size?: numbe
         'stroke-linecap': 'round',
         'stroke-dasharray': `${(frac * C).toFixed(2)} ${C.toFixed(2)}`,
         transform: `rotate(-90 ${cx} ${cy})`,
+        class: 'zss-aarc',
+        style: `--arc:${(frac * C).toFixed(2)}`, // 0%→実割合へ弧を描く
       })
     );
   }
   // 中央: 大きな% ＋ 小さなラベル
-  svg.appendChild(
-    s('text', {
-      x: cx, y: cy, 'text-anchor': 'middle', 'dominant-baseline': 'central',
-      'font-size': Math.round(size * 0.27), 'font-weight': 800, 'font-variant-numeric': 'tabular-nums', fill: 'var(--ink)',
-    }, [`${pct}%`])
-  );
+  const pctText = s('text', {
+    x: cx, y: cy, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+    'font-size': Math.round(size * 0.27), 'font-weight': 800, 'font-variant-numeric': 'tabular-nums', fill: 'var(--ink)',
+  });
+  countUp(pctText, `${pct}%`); // 0%→実値へカウントアップ（弧の描画と同期的に伸びる）
+  svg.appendChild(pctText);
   svg.appendChild(
     s('text', {
       x: cx, y: cy + Math.round(size * 0.2), 'text-anchor': 'middle',

@@ -23,6 +23,10 @@ export const CSS = `
   /* カレンダー逐次ランプ（validate_palette.js --ordinal で light ALL PASS） */
   --cal-none: #e6e8eb; --cal-0: #d8e8f8;
   --cal-1: #83b4e8; --cal-2: #5c9be4; --cal-3: #2f77d2; --cal-4: #0a4b8f;
+  /* 教科別カテゴリ配色（Okabe-Ito ベース。validate_palette.js --pairs all で PASS。
+     CVD 6-8 帯のため凡例＋直接ラベル＋スライス間ギャップの二次符号化を併用）。 */
+  --cat-1: #0072b2; --cat-2: #d55e00; --cat-3: #009e73; --cat-4: #cc79a7;
+  --cat-5: #56b4e9; --cat-6: #e69f00; --cat-other: #9aa6b2;
 
   all: initial;
   display: block;
@@ -42,6 +46,9 @@ export const CSS = `
   /* カレンダー逐次ランプ（dark ALL PASS） */
   --cal-none: #2a2f37; --cal-0: #16324f;
   --cal-1: #1c4f82; --cal-2: #2f77d2; --cal-3: #5c9be4; --cal-4: #9cc6f0;
+  /* 教科別カテゴリ配色は light と共用（Okabe-Ito は暗背景でも CVD/コントラスト/normal を満たす）。
+     --cat-other だけ暗背景で沈まないよう微調整。 */
+  --cat-other: #7b8794;
 }
 
 .zss-card {
@@ -81,7 +88,7 @@ export const CSS = `
 .zss-stat .l { font-size: 11px; color: var(--muted); margin-top: 1px; }
 
 .zss-section { margin-top: 20px; }
-.zss-section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.zss-section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; flex-wrap: wrap; gap: 4px 8px; }
 .zss-section-title { font-size: 12px; font-weight: 700; color: var(--ink); }
 .zss-section-note { font-size: 11px; color: var(--faint); }
 
@@ -126,6 +133,8 @@ export const CSS = `
   padding: 4px 10px; cursor: pointer; font-family: inherit;
 }
 .zss-seg button.on { background: var(--primary); color: #fff; }
+.zss-tsub { display: flex; justify-content: flex-end; margin: 2px 0 4px; }
+.zss-tsub-note { font-size: 11px; color: var(--faint); margin: 2px 0 4px; }
 .zss-cal-wrap { overflow-x: auto; max-width: 100%; margin-top: 2px; padding-bottom: 2px; }
 .zss-cal-wrap svg { display: block; }
 .zss-cal-legend { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--muted); }
@@ -273,6 +282,51 @@ export const CSS = `
 .zss-vol-chap { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 3px 0; }
 .zss-vol-chap-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .zss-vol-chap-meta { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* --- 表示アニメーション（段階的に現れる）。動きを減らす設定では一切動かさない。 --- */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes zss-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes zss-grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  @keyframes zss-draw { to { stroke-dashoffset: 0; } }
+  @keyframes zss-arc { from { stroke-dashoffset: var(--arc, 0); } to { stroke-dashoffset: 0; } }
+  @keyframes zss-pop { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: scale(1); } }
+  @keyframes zss-fade { from { opacity: 0; } to { opacity: var(--fo, 1); } }
+  @keyframes zss-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+  /* タブ内容・セクションのフェードアップ */
+  .zss-pane { animation: zss-fade-up .34s cubic-bezier(.2,.7,.3,1) both; }
+  /* 棒: ベースラインから伸びる（各バーに inline の animation-delay でスタッガ） */
+  .zss-abar { transform-box: fill-box; transform-origin: 50% 100%; animation: zss-grow-y .55s cubic-bezier(.2,.75,.3,1) both; }
+  /* 折れ線: 左から描かれる（pathLength=1 で正規化） */
+  .zss-adraw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: zss-draw .95s ease-out .08s forwards; }
+  /* ドーナツ弧: 0%→実割合へ描かれる */
+  .zss-aarc { animation: zss-arc 1.05s cubic-bezier(.3,.8,.3,1) .06s both; }
+  /* カレンダーのマス: 列ごとにポップイン */
+  .zss-acell { transform-box: fill-box; transform-origin: 50% 50%; animation: zss-pop .32s ease-out both; }
+  /* 図の重ね要素をふわっと（必要ライン・不確実性バンド・完了見込みラベル等） */
+  .zss-afade { animation: zss-fade .55s ease-out both; }
+  /* 横方向に伸びる（完了見込みP15–P85レンジ線など） */
+  .zss-agrow-x { transform-box: fill-box; transform-origin: 50% 50%; animation: zss-grow-x .55s cubic-bezier(.2,.75,.3,1) both; }
+  /* 教科ドーナツのスライス: 順にフェードイン（transform属性のrotateと衝突しないよう不透明度のみ） */
+  .zss-aslice { animation: zss-fade .4s ease-out both; }
+  /* 数値カウントアップ中の等幅ゆらぎ防止 */
+  .zss-count { font-variant-numeric: tabular-nums; }
+}
+
+.zss-vol-hint { font-size: 11px; color: var(--muted); margin: 6px 2px 4px; line-height: 1.5; }
+
+/* --- 教科別 残り学習量シェア（色分けドーナツ） --- */
+.zss-bd { margin-top: 2px; }
+.zss-bd-top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.zss-bd-donut { flex: 0 0 auto; }
+.zss-bd-donut svg { display: block; }
+.zss-bd-legend { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.zss-bd-item { display: flex; align-items: baseline; gap: 7px; font-size: 12px; line-height: 1.4; }
+.zss-bd-sw { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; align-self: center; }
+.zss-bd-name { color: var(--ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 9em; }
+.zss-bd-share { color: var(--ink); font-weight: 800; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.zss-bd-detail { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zss-bd-cap { font-size: 10px; color: var(--faint); margin-top: 8px; line-height: 1.5; }
 
 /* tooltip */
 .zss-tip {
