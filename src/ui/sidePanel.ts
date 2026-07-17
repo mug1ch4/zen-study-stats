@@ -70,6 +70,14 @@ export function ensureSidePanel(): void {
   root.appendChild(wrap);
   document.body.appendChild(host);
 
+  // ホストを作り直したらカードも作り直し（/setting 往復などで除去→再設置された場合、
+  // 旧フラグが残ると「開くと読み込みます」のまま二度と読み込まれない）。
+  cardLoaded = false;
+  if (openState) {
+    cardLoaded = true;
+    void loadCard(root); // 開いた状態を引き継いで再設置された場合は即読み込み
+  }
+
   if (!themeHooked) {
     themeHooked = true;
     window.addEventListener('zss:themechange', syncTheme);

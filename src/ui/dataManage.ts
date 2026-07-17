@@ -14,7 +14,8 @@ const PREFIX = 'zss:';
 //   dayStart  : 当日の始点passed（その日限り・カード表示時に再設定される）
 //   notify    : 通知の既送dedup（端末ごと。復元先で未読の節目通知を抑制してしまう）
 const SKIP_KEYS = new Set([
-  'zss:courseVol3',
+  'zss:courseVol3', // 旧キャッシュ（残っていても取り込まない）
+  'zss:courseVol4',
   'zss:lastSnap',
   'zss:lastPassed',
   'zss:dayStart',

@@ -5,6 +5,7 @@ import {
   fetchMyCourses,
   fetchCoursesBatch,
   fetchCourseChapters,
+  isSupplement,
   type Section,
 } from './courseApi';
 
@@ -36,7 +37,8 @@ export interface CourseVol {
 
 // コースIDごとに { sig, vol } を保存し、進捗が変わったコースだけ再集計する差分キャッシュ。
 // （全コース連結の署名だと1コース進んだだけで全再取得になる問題を回避）
-const CACHE_KEY = 'zss:courseVol3';
+// v4: supplement（視聴任意）を集計から除外した版。旧キャッシュ(v3)は自然放棄。
+const CACHE_KEY = 'zss:courseVol4';
 type CourseCache = Record<number, { sig: string; vol: CourseVol }>;
 
 // プレビュー/テスト用
@@ -56,11 +58,12 @@ function addSection(m: Metrics, s: Section): void {
     m.reportCount++;
   }
 }
-/** 総数と残（未passed）を1パスで両方集計。 */
+/** 総数と残（未passed）を1パスで両方集計。視聴任意(supplement)は本家の進捗対象外なので除外。 */
 function tally(sections: Section[]): { total: Metrics; remaining: Metrics } {
   const total = zero();
   const remaining = zero();
   for (const s of sections) {
+    if (isSupplement(s)) continue; // 本家の total_count/passed_materials と母集団を揃える
     addSection(total, s);
     if (!s.passed) addSection(remaining, s);
   }

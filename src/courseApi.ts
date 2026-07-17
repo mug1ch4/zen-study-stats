@@ -39,9 +39,16 @@ export interface CourseBatch {
 }
 export interface Section {
   resource_type: string; // movie / evaluation_test / essay_test / evaluation_report / essay_report
+  material_type?: string; // "main"=必須教材 / "supplement"=視聴任意（本家の進捗カウント対象外）
   length?: number; // movie の秒数
   total_question?: number; // test の問題数
   passed: boolean;
+}
+
+/** 視聴任意（supplement）か。本家の progress（total_count/passed_materials）は main のみを数える
+ *  （HAR実測: 章のsections 27件中 supplement 4件 → total_count=23）。集計を本家と揃えるため除外する。 */
+export function isSupplement(s: Section): boolean {
+  return s.material_type === 'supplement';
 }
 export interface ChapterSections {
   id: number;
@@ -116,6 +123,7 @@ export interface RemainingWork {
 function tallyRemaining(sections: Section[]): RemainingWork {
   const r: RemainingWork = { movieSeconds: 0, movieCount: 0, testCount: 0, reportCount: 0 };
   for (const s of sections) {
+    if (isSupplement(s)) continue; // 視聴任意は本家の進捗対象外 → 「残り」に数えない
     if (s.passed) continue; // 未完了のみ＝「あと」の分量
     if (s.resource_type === 'movie') {
       r.movieSeconds += s.length ?? 0;
@@ -165,6 +173,7 @@ export async function fetchCourseChapters(
     id: ch.id,
     sections: (ch.sections ?? []).map((s) => ({
       resource_type: s.resource_type,
+      material_type: s.material_type,
       length: s.length,
       total_question: s.total_question,
       passed: s.passed,
