@@ -5,7 +5,11 @@ import { durationStr } from './format';
 import { h } from './dom';
 
 const HOST_ID = 'zss-summary-host';
-const cache = new Map<string, RemainingWork>();
+// key → 集計結果。null = 取得失敗（★二度と再取得しない＝リクエストストーム防止）。
+const cache = new Map<string, RemainingWork | null>();
+// key → 再注入回数。React がホストを消し続けるページで無限に注入し直すのを防ぐ上限。
+const mountCount = new Map<string, number>();
+const MOUNT_CAP = 8;
 let busy = false;
 
 interface PathInfo {
@@ -89,7 +93,29 @@ function fillBanner(box: HTMLElement, r: RemainingWork, kind: 'course' | 'chapte
   );
 }
 
-/** コース/チャプター画面なら残りサマリを注入（即プレースホルダ→データで更新・冪等）。 */
+/** 見出しを含むカードの挿入位置を特定（未描画なら null）。 */
+function findSpot(info: PathInfo): HTMLElement | null {
+  const heading = findHeading(info.kind);
+  if (!heading) return null;
+  return cardAncestor(heading) ?? heading.parentElement ?? null;
+}
+
+/** ホスト（Shadow DOM）を作って挿入し、内部の box を返す。 */
+function mountHost(container: HTMLElement, info: PathInfo): { host: HTMLElement; box: HTMLElement } {
+  const host = document.createElement('div');
+  host.id = HOST_ID;
+  host.setAttribute('data-key', info.key);
+  host.style.display = 'block';
+  const root = host.attachShadow({ mode: 'open' });
+  const box = bannerBox();
+  root.appendChild(box);
+  container.insertBefore(host, container.firstChild);
+  return { host, box };
+}
+
+/** コース/チャプター画面なら残りサマリを注入（即プレースホルダ→データで更新・冪等）。
+ *  ★storm防止: 一度取得を試みたキーは成功でも失敗でも二度と再取得しない（cache.has で判定）。
+ *  高頻度の MutationObserver から呼ばれても、ネットワークは各キー最大1回に限定される。 */
 export async function ensureCourseSummary(): Promise<void> {
   const info = pathInfo();
   const existing = document.getElementById(HOST_ID);
@@ -98,47 +124,44 @@ export async function ensureCourseSummary(): Promise<void> {
     return;
   }
   if (existing) {
-    if (existing.getAttribute('data-key') === info.key) return; // 既に正しい
-    existing.remove(); // 別ページのが残っている → 差し替え
+    if (existing.getAttribute('data-key') === info.key) return; // 既に正しく設置済み
+    existing.remove(); // 別ページのが残っている → 撤去
   }
+
+  // --- データ既知（成功 or 失敗）: fetch せず描画のみ。ここが storm を根絶する。 ---
+  if (cache.has(info.key)) {
+    const rem = cache.get(info.key) ?? null;
+    if (rem === null) return; // 取得失敗のキー → 何も出さない（プレースホルダも出さず点滅しない）
+    const n = mountCount.get(info.key) ?? 0;
+    if (n >= MOUNT_CAP) return; // React が消し続けるページでの無限再注入を打ち切る
+    const spot = findSpot(info);
+    if (!spot) return;
+    mountCount.set(info.key, n + 1);
+    fillBanner(mountHost(spot, info).box, rem, info.kind);
+    return;
+  }
+
+  // --- 未知キー: 1回だけ取得（busy で直列化） ---
   if (busy) return;
-
-  const heading = findHeading(info.kind);
-  const card = heading ? cardAncestor(heading) : null;
-  const container = card ?? heading?.parentElement ?? null; // カード先頭に入れる（無ければ見出しの親）
-  if (!heading || !container) return; // 未描画 → 次tick
-
+  const spot = findSpot(info);
+  if (!spot) return;
   busy = true;
+  const { host, box } = mountHost(spot, info);
+  fillPlaceholder(box);
+  mountCount.set(info.key, (mountCount.get(info.key) ?? 0) + 1);
   try {
-    // 即座にプレースホルダ表示（体感速度改善）。カード先頭にブロックで入れる（見出し行に割り込まない）
-    const host = document.createElement('div');
-    host.id = HOST_ID;
-    host.setAttribute('data-key', info.key);
-    host.style.display = 'block';
-    const root = host.attachShadow({ mode: 'open' });
-    const box = bannerBox();
-    fillPlaceholder(box);
-    root.appendChild(box);
-    container.insertBefore(host, container.firstChild);
-
-    // データ取得（キャッシュ優先）
-    let rem = cache.get(info.key);
-    if (!rem) {
-      rem =
-        info.kind === 'chapter'
-          ? await fetchChapterRemaining(info.courseId, info.chapterId!)
-          : await fetchCourseRemaining(info.courseId);
-      cache.set(info.key, rem);
-    }
-    // まだ同じページ＆同じホストなら反映
+    const rem =
+      info.kind === 'chapter'
+        ? await fetchChapterRemaining(info.courseId, info.chapterId!)
+        : await fetchCourseRemaining(info.courseId);
+    cache.set(info.key, rem);
     const now = pathInfo();
-    if (now?.key === info.key && document.getElementById(HOST_ID) === host) {
-      fillBanner(box, rem, info.kind);
-    } else {
-      host.remove();
-    }
+    if (now?.key === info.key && document.getElementById(HOST_ID) === host) fillBanner(box, rem, info.kind);
+    else host.remove();
   } catch (e) {
-    console.warn('[ZSS] コース残り集計失敗:', e);
+    // ★負のキャッシュ: このキーは失敗として記録し、以後この画面では二度と再取得しない。
+    console.warn('[ZSS] コース残り集計失敗（この画面では再取得しません）:', e);
+    cache.set(info.key, null);
     document.getElementById(HOST_ID)?.remove();
   } finally {
     busy = false;
@@ -148,6 +171,7 @@ export async function ensureCourseSummary(): Promise<void> {
 /** 完了検知後などに、残りサマリのキャッシュを捨てて最新の残りを取り直す。 */
 export function refreshSummary(): void {
   cache.clear();
+  mountCount.clear();
   document.getElementById(HOST_ID)?.remove();
   void ensureCourseSummary();
 }

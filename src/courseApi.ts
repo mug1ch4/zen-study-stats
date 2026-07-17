@@ -208,12 +208,11 @@ export async function fetchChapterRemaining(courseId: number, chapterId: number)
   return tallyRemaining(j.chapter?.sections ?? []);
 }
 
-/** 1コースの複数章の sections を1リクエストで（⑥のバッチ版）。 */
-export async function fetchCourseChapters(
-  courseId: number,
-  chapterIds: number[]
-): Promise<ChapterSections[]> {
-  if (!chapterIds.length) return [];
+// 1リクエストあたりの章数上限。章数の多いコース（例: 大学受験の27章）で
+// クエリ文字列が長くなりすぎ、サーバが 4xx/5xx を返す（→ 呼び出し側で失敗ループ）のを防ぐ。
+const CHAPTERS_PER_BATCH = 8;
+
+async function fetchChapterBatch(courseId: number, chapterIds: number[]): Promise<ChapterSections[]> {
   const qs = chapterIds
     .map((id) => `queries[][course_id]=${courseId}&queries[][chapter_id]=${id}`)
     .join('&');
@@ -229,4 +228,18 @@ export async function fetchCourseChapters(
       passed: s.passed,
     })),
   }));
+}
+
+/** 1コースの複数章の sections を取得（⑥）。章数が多い場合は分割して順次取得（URL肥大・レート配慮）。 */
+export async function fetchCourseChapters(
+  courseId: number,
+  chapterIds: number[]
+): Promise<ChapterSections[]> {
+  if (!chapterIds.length) return [];
+  if (chapterIds.length <= CHAPTERS_PER_BATCH) return fetchChapterBatch(courseId, chapterIds);
+  const out: ChapterSections[] = [];
+  for (let i = 0; i < chapterIds.length; i += CHAPTERS_PER_BATCH) {
+    out.push(...(await fetchChapterBatch(courseId, chapterIds.slice(i, i + CHAPTERS_PER_BATCH))));
+  }
+  return out;
 }
