@@ -63,14 +63,14 @@ export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip):
           class: 'zss-abar', style: `animation-delay:${i * 24}ms`,
         }));
       }
-      // 直接ラベル: 最高日 / 今日 のみ
-      if (i === maxIdx || isToday) {
-        const label = isToday ? `今日 ${d.amount}` : `${d.amount}`;
-        svg.appendChild(s('text', {
-          x: cx, y: BASE_Y - bh - 7, 'text-anchor': 'middle',
-          'font-size': 11, 'font-weight': 700, fill: 'var(--ink)',
-        }, [label]));
-      }
+      // 各棒の上に数値を表示（今日は「今日 N」・今日/最高日は強調、他は控えめ）。
+      const emphasize = i === maxIdx || isToday;
+      svg.appendChild(s('text', {
+        x: cx, y: BASE_Y - bh - 6, 'text-anchor': 'middle',
+        'font-size': 10, 'font-weight': emphasize ? 700 : 500,
+        fill: emphasize ? 'var(--ink)' : 'var(--muted)',
+        class: 'zss-afade', style: `animation-delay:${i * 24 + 250}ms`, // 棒が伸びた後にふわっと
+      }, [isToday ? `今日 ${d.amount}` : `${d.amount}`]));
     }
 
     // 曜日ラベル
