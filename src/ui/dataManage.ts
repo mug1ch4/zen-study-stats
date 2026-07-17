@@ -6,9 +6,24 @@ import { h } from '../dom';
 import { isoLocal } from '../format';
 
 const PREFIX = 'zss:';
-const CACHE_KEYS = new Set(['zss:courseVol3']); // 再構築可能なキャッシュはバックアップ対象外
+// バックアップ対象外（再構築可能なキャッシュ／端末ごとの運用・セッション状態）。
+// これらは復元するとむしろ不整合を招くため、書き出し・取り込みの両方で除外する:
+//   courseVol3: コース集計キャッシュ（次回取得で再構築）
+//   lastSnap  : 当日スナップ済みフラグ（復元すると復元先の当日スナップをスキップしてしまう）
+//   lastPassed: 完了検知の基準passed（端末ごとに実測から再設定すべき。復元すると初回差分が壊れる）
+//   dayStart  : 当日の始点passed（その日限り・カード表示時に再設定される）
+//   notify    : 通知の既送dedup（端末ごと。復元先で未読の節目通知を抑制してしまう）
+const SKIP_KEYS = new Set([
+  'zss:courseVol3',
+  'zss:lastSnap',
+  'zss:lastPassed',
+  'zss:dayStart',
+  'zss:notify',
+]);
 // 日付→数値の履歴系（インポート時に統合する）
 const HIST_KEYS = new Set(['zss:history', 'zss:reportHist', 'zss:materialHist']);
+// 時間帯の学習記録（24時間バケットの加算カウンタ）。復元先が空＝そのまま、既存あり＝合算で統合。
+const HOUR_KEY = 'zss:hourStats';
 
 interface Backup {
   app: 'zen-study-stats';
@@ -26,7 +41,7 @@ async function readAll(): Promise<Record<string, unknown>> {
   const all = (await chrome.storage.local.get(null)) as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(all)) {
-    if (k.startsWith(PREFIX) && !CACHE_KEYS.has(k)) out[k] = all[k];
+    if (k.startsWith(PREFIX) && !SKIP_KEYS.has(k)) out[k] = all[k];
   }
   return out;
 }
@@ -62,18 +77,30 @@ function toCsv(data: Record<string, unknown>): string {
   return '﻿' + lines.join('\r\n'); // BOM付き（Excelの文字化け防止）
 }
 
-/** インポート: 履歴系は統合（同日付は取り込み側で上書き）、スカラーは置換。削除はしない。 */
+/** 時間帯カウンタの統合: 24バケットとも「大きい方」を採用（重複取り込みでも二重計上せず・減らさない）。 */
+function mergeHourStats(cur: unknown, inc: unknown): unknown {
+  const z = (): number[] => new Array(24).fill(0);
+  const c = (cur ?? {}) as { study?: number[]; visit?: number[]; lastTs?: number };
+  const i = (inc ?? {}) as { study?: number[]; visit?: number[]; lastTs?: number };
+  const maxArr = (a: number[] = [], b: number[] = []): number[] => z().map((_, k) => Math.max(a[k] ?? 0, b[k] ?? 0));
+  return { study: maxArr(c.study, i.study), visit: maxArr(c.visit, i.visit), lastTs: Math.max(c.lastTs ?? 0, i.lastTs ?? 0) };
+}
+
+/** インポート: 履歴系は統合（同日付は取り込み側で上書き）、時間帯は大きい方で統合、他は置換。削除はしない。
+ *  運用/セッション状態(SKIP_KEYS)は取り込まない（復元先の当日スナップや完了検知基準を壊さないため）。 */
 async function importBackup(backup: Backup): Promise<number> {
   if (!hasStorage()) throw new Error('no-storage');
   const cur = (await chrome.storage.local.get(null)) as Record<string, unknown>;
   const patch: Record<string, unknown> = {};
   let mergedDates = 0;
   for (const [k, v] of Object.entries(backup.data)) {
-    if (!k.startsWith(PREFIX) || CACHE_KEYS.has(k)) continue;
+    if (!k.startsWith(PREFIX) || SKIP_KEYS.has(k)) continue;
     if (HIST_KEYS.has(k) && v && typeof v === 'object') {
       const merged = { ...((cur[k] as Record<string, number>) ?? {}), ...(v as Record<string, number>) };
       mergedDates += Object.keys(v as object).length;
       patch[k] = merged;
+    } else if (k === HOUR_KEY && v && typeof v === 'object') {
+      patch[k] = mergeHourStats(cur[k], v);
     } else {
       patch[k] = v;
     }
@@ -152,7 +179,8 @@ export function renderDataManage(): HTMLElement {
       '長期の学習履歴（カレンダー・トレンド・予測の土台）はこの端末だけに保存され、アンインストールで消えます。定期的な書き出しを推奨します。復元は既存データと統合します（削除はしません）。',
     ]),
     h('p', { class: 'zss-dm-note' }, [
-      'JSONバックアップに含むもの: 学習数履歴・完了レポート/教材消化の履歴・時間帯データ・目標完了日など（再構築可能なコース集計キャッシュのみ除外）。CSVは日付×学習数の一覧のみ。',
+      'JSONに含むもの: 学習数・完了レポート・教材消化の履歴、時間帯の学習記録、目標完了日、テーマ設定。',
+      '（コース集計キャッシュや、当日限り／端末ごとの内部状態＝スナップ済みフラグ・完了検知の基準値・通知の既送記録は、復元時の不整合を避けるため除外）。CSVは日付×学習数・完了レポート・教材消化の一覧。',
     ]),
     h('div', { class: 'zss-dm-row' }, [jsonBtn, csvBtn, importBtn, reloadBtn]),
     fileInput,
