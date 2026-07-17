@@ -3,7 +3,7 @@
 import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } from './api';
 import { fetchMaterialTotals } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
-import { initDarkMode, syncOurCard, rescanSoon, ensureToggleMounted } from './darkmode';
+import { initDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
 import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit } from './history';
 import { ensureCourseSummary } from './summaryInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
@@ -87,10 +87,14 @@ function observeDom(): void {
         debounce = window.setTimeout(() => void ensureApplied(), 60);
       }
     }
-    // コース/チャプター画面の残りサマリ（self-guardで対象ページのみ動く）
+    // コース/チャプター画面の残りサマリ（self-guardで対象ページのみ動く）＋ダークトグルの再設置。
+    // ナビは下スクロールで再描画されトグルが消えるため、消えた時だけ即再設置（ポーリング廃止）。
     if (started) {
       window.clearTimeout(sumDebounce);
-      sumDebounce = window.setTimeout(() => void ensureCourseSummary(), 120);
+      sumDebounce = window.setTimeout(() => {
+        void ensureCourseSummary();
+        refreshNavToggle();
+      }, 120);
     }
   });
   obs.observe(document.documentElement, { childList: true, subtree: true });

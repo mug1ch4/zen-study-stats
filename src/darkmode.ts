@@ -117,8 +117,13 @@ function syncOurCard(): void {
 export { syncOurCard };
 
 // ---- トグルボタン ----
-// 優先: 本家ナビ項目を複製して注入（クラス継承でネイティブな見た目）。
-// フォールバック: ナビが無いページ(コンパクトヘッダ等)では右下フローティング。
+// トグルは本家ナビに「複製項目」として注入（ネイティブな見た目）。ナビは下スクロールで
+// 隠れる/コンパクト化(h70↔h40)を React が再描画で切り替えるため、以下で堅牢化する:
+//  (1) 挿入先＝「全ナビ項目を並べる flex 行」= 2つ以上のナビリンクの最小共通祖先。
+//      （ホーム個別の小コンテナに入れると幅が足りずコンパクト時にはみ出すため）
+//  (2) 再描画で消えても即再設置（content.ts の MutationObserver → ensureToggleMounted）。
+//  (3) ナビが無いページのみ右下フローティングにフォールバック。
+//  (4) 状態ガードで無駄な DOM 変更（→再描画ループ）を防ぐ。
 const NAV_BTN_ID = 'zss-nav-btn';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MOON_PATH = 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z';
@@ -126,92 +131,79 @@ const MOON_PATH = 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z';
 function themeIcon(dark: boolean, cls: string): SVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('width', '22');
-  svg.setAttribute('height', '22');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '2');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.setAttribute('class', cls);
+  svg.setAttribute('width', '22'); svg.setAttribute('height', '22');
+  svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2'); svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round'); svg.setAttribute('class', cls);
   svg.setAttribute('data-zss-icon', '1');
   if (dark) {
-    // 太陽（現在ダーク→クリックでライトへ）
     const c = document.createElementNS(SVG_NS, 'circle');
-    c.setAttribute('cx', '12'); c.setAttribute('cy', '12'); c.setAttribute('r', '4');
-    svg.appendChild(c);
+    c.setAttribute('cx', '12'); c.setAttribute('cy', '12'); c.setAttribute('r', '4'); svg.appendChild(c);
     const rays = [[12,1,12,3],[12,21,12,23],[4.2,4.2,5.6,5.6],[18.4,18.4,19.8,19.8],[1,12,3,12],[21,12,23,12],[4.2,19.8,5.6,18.4],[18.4,5.6,19.8,4.2]];
-    for (const [x1,y1,x2,y2] of rays) {
+    for (const [x1, y1, x2, y2] of rays) {
       const l = document.createElementNS(SVG_NS, 'line');
-      l.setAttribute('x1', String(x1)); l.setAttribute('y1', String(y1));
-      l.setAttribute('x2', String(x2)); l.setAttribute('y2', String(y2));
+      l.setAttribute('x1', String(x1)); l.setAttribute('y1', String(y1)); l.setAttribute('x2', String(x2)); l.setAttribute('y2', String(y2));
       svg.appendChild(l);
     }
   } else {
-    const p = document.createElementNS(SVG_NS, 'path');
-    p.setAttribute('d', MOON_PATH);
-    svg.appendChild(p);
+    const p = document.createElementNS(SVG_NS, 'path'); p.setAttribute('d', MOON_PATH); svg.appendChild(p);
   }
   return svg;
 }
 
-/** 本家ナビの「アイコン+ラベル」リンク項目をテンプレとして返す。 */
-function findNavTemplate(): HTMLElement | null {
-  const items = Array.from(
-    document.querySelectorAll<HTMLElement>('header a, [role="banner"] a')
-  ).filter((a) => a.querySelector('i[type]'));
-  return items[0] ?? null;
+/** 全ナビ項目を並べる flex 行と、複製元テンプレ(先頭リンク)。2リンクの最小共通祖先で特定。 */
+function findNavSpot(): { container: HTMLElement; template: HTMLElement } | null {
+  const header = document.querySelector<HTMLElement>('header, [role="banner"]');
+  if (!header) return null;
+  const links = Array.from(header.querySelectorAll<HTMLElement>('a')).filter((a) => a.querySelector('i[type]'));
+  if (links.length < 2) return null;
+  let c: HTMLElement | null = links[0];
+  while (c && !c.contains(links[1])) c = c.parentElement;
+  if (!c || c === links[0]) return null;
+  return { container: c, template: links[0] };
 }
 
+function makeNavButton(template: HTMLElement): HTMLElement {
+  const size = template.querySelector<HTMLElement>('i')?.offsetHeight || 24;
+  const btn = template.cloneNode(true) as HTMLElement;
+  btn.id = NAV_BTN_ID;
+  btn.removeAttribute('href'); btn.removeAttribute('aria-current');
+  btn.setAttribute('role', 'button'); btn.style.cursor = 'pointer';
+  const i = btn.querySelector('i');
+  const icon = themeIcon(enabled, i?.getAttribute('class') ?? '');
+  icon.setAttribute('width', String(size)); icon.setAttribute('height', String(size));
+  if (i) i.replaceWith(icon);
+  const span = btn.querySelector('span'); if (span) span.textContent = 'テーマ';
+  btn.dataset.zssState = enabled ? 'd' : 'l';
+  btn.addEventListener('click', (e) => { e.preventDefault(); void setEnabled(!enabled); });
+  return btn;
+}
+
+/** ナビが無いページ用の右下フローティング（フォールバック）。 */
 function ensureFloating(): void {
-  if (document.getElementById(TOGGLE_ID)) return;
-  const host = document.createElement('div');
-  host.id = TOGGLE_ID;
+  if (document.getElementById(TOGGLE_ID)) { updateToggleIcon(); return; }
+  const host = document.createElement('div'); host.id = TOGGLE_ID;
   const root = host.attachShadow({ mode: 'open' });
   const st = document.createElement('style');
-  st.textContent = `
-    .btn { position: fixed; right: 16px; bottom: 16px; z-index: 2147483646;
-      width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
-      background: #2a2f37; color: #fff; font-size: 18px; line-height: 40px; text-align: center;
-      box-shadow: 0 2px 8px rgba(0,0,0,.35); transition: transform .1s; }
-    .btn:hover { transform: scale(1.06); }
-  `;
-  const btn = document.createElement('button');
-  btn.className = 'btn';
-  btn.title = 'ダークモード切替 (ZSS)';
+  st.textContent = `.fab{position:fixed;right:16px;bottom:16px;z-index:2147483646;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:19px;border:1px solid rgba(0,0,0,.1);cursor:pointer;background:#fff;color:#333;box-shadow:0 3px 14px rgba(0,0,0,.22);font:600 12px/1 system-ui,sans-serif}.fab.on{background:#2a2f37;color:#f2f2f2}.fab .em{font-size:15px}`;
+  const btn = document.createElement('button'); btn.className = 'fab'; btn.type = 'button';
+  btn.setAttribute('aria-label', 'ライト/ダーク切替');
   btn.addEventListener('click', () => void setEnabled(!enabled));
   root.append(st, btn);
   (document.body ?? document.documentElement).appendChild(host);
+  updateToggleIcon();
 }
 
-/** トグルを設置（ナビ優先・冪等）。ナビ再描画で消えたら再注入するため毎回呼んでよい。 */
+/** トグル設置: ナビがあれば複製項目、無ければフローティング（冪等・状態ガードあり）。 */
 function ensureToggle(): void {
-  const tpl = findNavTemplate();
-  if (tpl && tpl.parentElement) {
-    if (!document.getElementById(NAV_BTN_ID)) {
-      // 本家アイコンの実寸に合わせる（ラベルの縦位置を他項目と揃えるため）
-      const tplIcon = tpl.querySelector<HTMLElement>('i');
-      const size = tplIcon?.offsetHeight || 24;
-      const btn = tpl.cloneNode(true) as HTMLElement;
-      btn.id = NAV_BTN_ID;
-      btn.removeAttribute('href');
-      btn.removeAttribute('aria-current');
-      btn.setAttribute('role', 'button');
-      btn.style.cursor = 'pointer';
-      const i = btn.querySelector('i');
-      const icon = themeIcon(enabled, i?.getAttribute('class') ?? '');
-      icon.setAttribute('width', String(size));
-      icon.setAttribute('height', String(size));
-      if (i) i.replaceWith(icon);
-      const span = btn.querySelector('span');
-      if (span) span.textContent = 'テーマ';
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        void setEnabled(!enabled);
-      });
-      tpl.parentElement.appendChild(btn);
+  const spot = findNavSpot();
+  if (spot) {
+    const existing = document.getElementById(NAV_BTN_ID);
+    if (!existing || !spot.container.contains(existing)) {
+      existing?.remove();
+      spot.container.appendChild(makeNavButton(spot.template));
     }
-    document.getElementById(TOGGLE_ID)?.remove(); // ナビがあればフローティング不要
+    document.getElementById(TOGGLE_ID)?.remove(); // ナビにあればフローティング不要
   } else {
     ensureFloating();
   }
@@ -219,18 +211,27 @@ function ensureToggle(): void {
 }
 
 function updateToggleIcon(): void {
-  // ナビボタンのアイコン差し替え（サイズは引き継ぐ）
-  const navBtn = document.getElementById(NAV_BTN_ID);
-  const oldIcon = navBtn?.querySelector('[data-zss-icon]');
-  if (navBtn && oldIcon) {
-    const icon = themeIcon(enabled, oldIcon.getAttribute('class') ?? '');
-    icon.setAttribute('width', oldIcon.getAttribute('width') ?? '24');
-    icon.setAttribute('height', oldIcon.getAttribute('height') ?? '24');
-    oldIcon.replaceWith(icon);
+  const want = enabled ? 'd' : 'l';
+  const navBtn = document.getElementById(NAV_BTN_ID) as HTMLElement | null;
+  if (navBtn && navBtn.dataset.zssState !== want) {
+    const oldIcon = navBtn.querySelector('[data-zss-icon]');
+    if (oldIcon) {
+      const icon = themeIcon(enabled, oldIcon.getAttribute('class') ?? '');
+      icon.setAttribute('width', oldIcon.getAttribute('width') ?? '24');
+      icon.setAttribute('height', oldIcon.getAttribute('height') ?? '24');
+      oldIcon.replaceWith(icon);
+    }
+    navBtn.dataset.zssState = want;
   }
-  // フローティングの絵文字
-  const fbtn = document.getElementById(TOGGLE_ID)?.shadowRoot?.querySelector('button');
-  if (fbtn) fbtn.textContent = enabled ? '☀️' : '🌙';
+  const fbtn = document.getElementById(TOGGLE_ID)?.shadowRoot?.querySelector('button.fab') as HTMLElement | null;
+  if (fbtn && fbtn.dataset.zssState !== want) {
+    fbtn.classList.toggle('on', enabled);
+    fbtn.textContent = '';
+    const em = document.createElement('span'); em.className = 'em'; em.textContent = enabled ? '☀️' : '🌙';
+    const lb = document.createElement('span'); lb.textContent = enabled ? 'ライト' : 'ダーク';
+    fbtn.append(em, lb);
+    fbtn.dataset.zssState = want;
+  }
 }
 
 // ---- 有効/無効 ----
@@ -341,16 +342,23 @@ export function rescanSoon(): void {
   setTimeout(() => enabled && scan(document.body), 900);
 }
 
-/** トグルの再設置（ナビ再描画やページ遷移で消えた時に呼ぶ）。ダークON/OFFに関わらず常に必要。 */
+/** トグルの再設置（ページ遷移時などに完全確認）。 */
 export function ensureToggleMounted(): void {
+  ensureToggle();
+}
+
+/** 高頻度の MutationObserver から呼ぶ安価版: 消えている時だけ再設置（在れば即抜け）。 */
+export function refreshNavToggle(): void {
+  const btn = document.getElementById(NAV_BTN_ID);
+  if (btn && btn.isConnected) return;
   ensureToggle();
 }
 
 // ---- 初期化 ----
 export async function initDarkMode(): Promise<void> {
   ensureToggle();
-  // ナビはReact再描画で消えるので、定期的に再設置（存在すれば安価に抜ける）。
-  setInterval(ensureToggle, 1500);
+  // 固定配置ボタンは body直下の Shadow DOM で React再描画に影響されないため、
+  // 以前の setInterval ポーリングは不要。念のため遷移時に ensureToggleMounted で再確認する。
   let saved = false;
   try {
     const r = await chrome.storage?.local.get(STORAGE_KEY);
