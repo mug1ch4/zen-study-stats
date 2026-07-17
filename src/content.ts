@@ -8,6 +8,11 @@ import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, re
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
 import { notifyRolloverSoon, notifyProgress } from './notify';
+import { showToast } from './ui/toast';
+
+// 【DEV】完了検知の動作確認用トースト。切り分け（observer発火/確定判定）を可視化する。
+// ※リリース前に false に戻す（通常ユーザーには不要）。
+const DEV_NOTIFY = true;
 
 const SETTING_PATH = '/setting';
 
@@ -123,25 +128,34 @@ function onCompletion(): void {
       const prev = await getLastPassed();
       if (prev === null) {
         await setLastPassed(mt.passed); // 初回は基準値のみ（過去分を誤カウントしない）
+        if (DEV_NOTIFY) showToast(`ℹ️ [dev] 基準値を設定: passed=${mt.passed}（初回は計上なし）`, { icon: 'ℹ️', durationMs: 9000 });
         return;
       }
       const delta = mt.passed - prev;
-      if (delta <= 0) return; // 不合格/再提出/既計上 → 何もしない（＝ここより下流は"確定分"だけ）
+      if (delta <= 0) {
+        // 不合格/再提出/既計上 → 何もしない（＝ここより下流は"確定分"だけ）
+        if (DEV_NOTIFY) showToast(`⚠️ [dev] 検知したが passed 不変（${mt.passed}）＝不合格/既計上`, { icon: '⚠️', accent: '#d9822b', durationMs: 9000 });
+        return;
+      }
       await setLastPassed(mt.passed);
       await recordCompletion(Date.now(), delta); // "その時刻"へ実カウントぶん加算（正確な時間帯）
       window.dispatchEvent(new Event('zss:hourupdate')); // 開いているカードの時間帯トレンドをライブ更新
       await notifyProgress(mt.passed, mt.total); // 節目トースト
       refreshSummary(); // コース/章バナーの残りを最新化
-    } catch {
-      /* ignore */
+      if (DEV_NOTIFY) showToast(`✅ [dev] 確定: passed ${prev}→${mt.passed}（+${delta}）を記録`, { icon: '✅', accent: '#1a8a4a', durationMs: 9000 });
+    } catch (e) {
+      if (DEV_NOTIFY) showToast(`❌ [dev] 集計失敗: ${String(e).slice(0, 60)}`, { icon: '❌', accent: '#d9822b', durationMs: 9000 });
     }
   }, 4000);
 }
 function listenCompletions(): void {
   window.addEventListener('message', (e) => {
     if (e.source !== window) return;
-    const d = e.data as { __zss?: string } | null;
-    if (d && d.__zss === 'completion') onCompletion();
+    const d = e.data as { __zss?: string; courseId?: string; chapterId?: string } | null;
+    if (d && d.__zss === 'completion') {
+      if (DEV_NOTIFY) showToast(`🔎 [dev] 完了通信を検知: course ${d.courseId} / ch ${d.chapterId}`, { icon: '🔎', durationMs: 9000 });
+      onCompletion();
+    }
   });
 }
 
