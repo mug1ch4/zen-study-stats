@@ -5,7 +5,7 @@ import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
-import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats } from '../history';
+import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart } from '../history';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, type Section } from '../analysis';
 import { motivationNudges, type Nudge } from '../motivation';
 import { notifyProgress, notifyQuest } from '../notify';
@@ -295,12 +295,12 @@ async function renderPredictTab(
       report.takingCourseCount > report.requiredCourseCount
         ? `※「学習数」（累計・日別）は非必修コースも含みます（履修${report.takingCourseCount} / 必修${report.requiredCourseCount}）。そのぶんペース推定は高めに出ることがあります。必修の進捗は「残教材」で判定しています。`
         : `※「学習数」（累計・日別）は全コースの合計です。必修の進捗は「残教材」で判定しています。`;
-    // デイリー達成は「教材消化の実差分」で判定（非必修も含む学習数ではなく、絶対的な完了教材数）。
-    // 当日始点＝今日より前の最新スナップの passed。それからの増分＝今日完了した教材数。
-    const todayStr = isoDate(zenToday());
-    const priorSnaps = mh.series.filter((p) => p.date < todayStr);
-    const baselinePassed = priorSnaps.length ? priorSnaps[priorSnaps.length - 1].passed : mh.series[0]?.passed ?? passed;
-    const todayDone = Math.max(0, passed - baselinePassed);
+    // デイリー達成は「教材消化の実差分」で判定（非必修も含む学習数ではなく、完了教材数）。
+    // 当日始点(ensureDayStart で記録)からの増分＝今日完了した教材数。始点が今日でなければ0。
+    // 日次スナップショットが今日既に走っていて始点未記録なケースを、カード表示時にも補完（現在値=始点）。
+    await ensureDayStart(passed);
+    const ds = await getDayStart();
+    const todayDone = ds && ds.date === isoDate(zenToday()) ? Math.max(0, passed - ds.passed) : 0;
 
     pane.textContent = '';
     pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayDone, { savedTarget, electivesNote }));

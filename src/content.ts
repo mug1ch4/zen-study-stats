@@ -4,7 +4,7 @@ import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } fro
 import { fetchMaterialTotals } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, initDarkModeFrame, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
-import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed } from './history';
+import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart } from './history';
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
 import { notifyRolloverSoon, notifyProgress } from './notify';
@@ -12,7 +12,7 @@ import { showToast } from './ui/toast';
 
 // 【DEV】完了検知の動作確認用トースト。切り分け（observer発火/確定判定）を可視化する。
 // ※リリース前に false に戻す（通常ユーザーには不要）。
-const DEV_NOTIFY = true;
+const DEV_NOTIFY = false;
 
 const SETTING_PATH = '/setting';
 
@@ -190,6 +190,7 @@ function startup(): void {
     try {
       const mt = await fetchMaterialTotals(); // 教材消化（コツコツ視聴を反映する主指標）
       await snapshotMaterials(mt.passed, mt.total);
+      await ensureDayStart(mt.passed); // 新しい学習日の始点passedを記録（デイリー目標の当日完了数算出用）
     } catch {
       /* 教材取得失敗も他を妨げない */
     }

@@ -117,6 +117,32 @@ export async function snapshotMaterials(passed: number, total: number): Promise<
   }
 }
 
+// 当日始点の passed_materials（デイリー目標の「今日の完了数」を確実に差分算出するため）。
+const KEY_DAYSTART = 'zss:dayStart'; // { date:"YYYY-MM-DD", passed:number }
+export async function getDayStart(): Promise<{ date: string; passed: number } | null> {
+  if (memOverride) return null;
+  try {
+    const r = await chrome.storage.local.get([KEY_DAYSTART]);
+    const v = r?.[KEY_DAYSTART] as { date: string; passed: number } | undefined;
+    return v && typeof v.passed === 'number' ? v : null;
+  } catch {
+    return null;
+  }
+}
+/** 新しい学習日になったら当日始点を記録（同じ日なら何もしない＝始点は動かさない）。 */
+export async function ensureDayStart(currentPassed: number): Promise<void> {
+  if (memOverride) return;
+  try {
+    const today = todayISO();
+    const cur = await getDayStart();
+    if (!cur || cur.date !== today) {
+      await chrome.storage.local.set({ [KEY_DAYSTART]: { date: today, passed: currentPassed } });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 教材消化履歴（日付昇順）＋最新total。 */
 export async function getMaterialHistory(): Promise<{ series: { date: string; passed: number }[]; total: number }> {
   if (mockMatHist) {
