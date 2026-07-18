@@ -21,7 +21,7 @@ import { countUp } from '../anim';
 import { notifyProgress, notifyQuest } from '../notify';
 import { getNotifyLog } from './toast';
 import { fetchReportProgresses } from '../api';
-import { fetchCourseMaterials, fetchElectiveCourses } from '../courseApi';
+import { fetchCourseMaterials, fetchElectiveCourses, type ElectiveCourse } from '../courseApi';
 import { getStudyMode, setStudyMode, type StudyMode } from '../history';
 import { calendarData, trendPoints, streakInfo, type TrendMode } from '../deriveHistory';
 import { computePrediction, recommendedPace, type Prediction } from '../predictor';
@@ -645,12 +645,12 @@ async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<Co
     pane.textContent = '';
     if (mode === 'elective') {
       pane.appendChild(modeBadge('elective'));
-      if (!courses.length) {
-        pane.appendChild(h('div', { class: 'zss-empty' }, ['着手中の必修以外コースはありません（総章のある選択科目・講座がここに表示されます）。']));
+      const ec = courses as ElectiveCourse[];
+      if (!ec.length) {
+        pane.appendChild(h('div', { class: 'zss-empty' }, ['受講中の必修以外コースはありません（理解度または習熟度テストのある選択科目・講座がここに表示されます）。']));
         return;
       }
-      pane.appendChild(h('div', { class: 'zss-analysis-sub' }, ['章単位の進捗（必修以外は自己ペース＝締切はありません）。残りの多い順。']));
-      pane.appendChild(renderSubjectRemaining(courses, '章'));
+      pane.appendChild(renderElectiveSubjects(ec));
       return;
     }
     const tierA = renderSubjectRemaining(courses);
@@ -860,6 +860,47 @@ function renderSubjectRemaining(courses: { id: number; title: string; total: num
   ]);
 }
 
+/** 必修以外の教科一覧（本家「課外授業」準拠: 理解度＝閲覧進捗・習熟度テスト＝修了判定）。 */
+function renderElectiveSubjects(courses: ElectiveCourse[]): HTMLElement {
+  const startedOf = (c: ElectiveCourse) => (c.compDone > 0 || c.testPassed > 0 ? 1 : 0);
+  // 着手コースを上に、その中で残り（未閲覧教材）の多い順。未着手は下（教材数の多い順）。
+  const sorted = [...courses].sort((a, b) => startedOf(b) - startedOf(a) || (b.compLimit - b.compDone) - (a.compLimit - a.compDone) || b.compLimit - a.compLimit);
+  const compTotal = courses.reduce((a, c) => a + c.compLimit, 0);
+  const compDone = courses.reduce((a, c) => a + c.compDone, 0);
+  const testTotal = courses.reduce((a, c) => a + c.testTotal, 0);
+  const testPassed = courses.reduce((a, c) => a + c.testPassed, 0);
+  const compPct = compTotal ? Math.floor((compDone / compTotal) * 100) : 0; // 本家「理解度%」は floor
+  const donut = h('div', { class: 'zss-vol-summary zss-vol-summary-flex' }, [
+    renderDonut(compDone, compTotal, { size: 96, label: '理解度' }),
+    h('div', { class: 'zss-vol-sum-body' }, [
+      h('div', { class: 'zss-vol-sum-main' }, [`全${courses.length}コース · 理解度 ${compDone}/${compTotal}（${compPct}%）`]),
+      h('div', { class: 'zss-vol-sum-note' }, [testTotal ? `習熟度テスト ${testPassed}/${testTotal} 合格` : '習熟度テストなし']),
+    ]),
+  ]);
+  const rows = sorted.map((c) => {
+    const compP = c.compLimit ? Math.floor((c.compDone / c.compLimit) * 100) : 0;
+    const parts: string[] = [];
+    if (c.compLimit) parts.push(`理解度 ${compP}%（${c.compDone}/${c.compLimit}）`);
+    if (c.testTotal) parts.push(`習熟度テスト ${c.testPassed}/${c.testTotal}`);
+    return h('a', { class: 'zss-vol-course zss-vol-link', href: `/courses/${c.id}`, title: 'コースを開く' }, [
+      h('div', { class: 'zss-vol-row-top' }, [
+        h('span', { class: 'zss-vol-name' }, [c.title, ...(c.compDone === 0 && c.testPassed === 0 ? [h('span', { class: 'zss-untouched' }, ['未着手'])] : [])]),
+        h('span', { class: 'zss-vol-pct' }, [`${parts.join(' · ')} ›`]),
+      ]),
+      progressBar(compP),
+    ]);
+  });
+  return section('必修以外の教科', '本家「課外授業」準拠 · 理解度＝教材の閲覧進捗／習熟度テスト＝修了判定 · 締切なしの自己ペース', [
+    donut,
+    ...rows,
+    dataTable(
+      'データを表で見る',
+      ['教科', '理解度%', '閲覧', '教材数', '習熟度合格', '習熟度総'],
+      sorted.map((c) => [c.title, c.compLimit ? Math.floor((c.compDone / c.compLimit) * 100) : 0, c.compDone, c.compLimit, c.testPassed, c.testTotal])
+    ),
+  ]);
+}
+
 /** モードのラベル小バッジ（elective ペイン冒頭に「必修以外」を明示）。 */
 function modeBadge(mode: StudyMode): HTMLElement {
   return h('div', { class: 'zss-mode-badge' + (mode === 'elective' ? ' elective' : '') }, [
@@ -872,29 +913,30 @@ async function renderElectivePredictTab(pane: HTMLElement, getCourses: () => Pro
   pane.textContent = '';
   pane.appendChild(h('div', { class: 'zss-empty' }, ['読み込み中…']));
   try {
-    const courses = await getCourses();
+    const courses = (await getCourses()) as ElectiveCourse[];
     pane.textContent = '';
     pane.appendChild(modeBadge('elective'));
-    const total = courses.reduce((a, c) => a + c.total, 0);
-    const passed = courses.reduce((a, c) => a + c.passed, 0);
-    const started = courses.filter((c) => c.passed > 0).length;
-    const doneCourses = courses.filter((c) => c.total > 0 && c.passed >= c.total).length;
-    const pct = total ? Math.round((passed / total) * 100) : 0;
+    const compTotal = courses.reduce((a, c) => a + c.compLimit, 0);
+    const compDone = courses.reduce((a, c) => a + c.compDone, 0);
+    const testTotal = courses.reduce((a, c) => a + c.testTotal, 0);
+    const testPassed = courses.reduce((a, c) => a + c.testPassed, 0);
+    const started = courses.filter((c) => c.compDone > 0 || c.testPassed > 0).length;
+    const pct = compTotal ? Math.floor((compDone / compTotal) * 100) : 0;
     pane.appendChild(
       h('div', { class: 'zss-deadline ok' }, [
         h('div', { class: 'zss-deadline-head' }, ['必修以外は自己ペース']),
-        h('div', { class: 'zss-deadline-body' }, ['選択科目・講座に提出締切はありません。年度レポート完了予測（締切逆算）は必修モードでのみ表示します。ここでは消化状況を表示します。']),
+        h('div', { class: 'zss-deadline-body' }, ['選択科目・講座に提出締切はありません。年度レポート完了予測（締切逆算）は必修モードでのみ表示します。ここでは本家「課外授業」と同じ指標（理解度・習熟度テスト）で消化状況を表示します。']),
       ])
     );
     pane.appendChild(
       h('div', { class: 'zss-kpis' }, [
-        kpiTile(`${passed}/${total}`, `章 進捗（${pct}%）`),
-        kpiTile(`${started}/${courses.length}`, '着手コース'),
-        kpiTile(`${doneCourses}`, '完了コース'),
+        kpiTile(`${pct}%`, `理解度（${compDone}/${compTotal}）`),
+        kpiTile(testTotal ? `${testPassed}/${testTotal}` : '—', '習熟度テスト'),
+        kpiTile(`${started}/${courses.length}`, '受講コース'),
       ])
     );
     pane.appendChild(
-      h('div', { class: 'zss-pred-note' }, ['必修以外の詳しい残量は「教科」タブ（必修以外）で確認できます。※進捗は章単位（total_count/passed_count）。学習数・傾向は「推移」タブに全体で表示されます。']),
+      h('div', { class: 'zss-pred-note' }, ['必修以外の詳しい内訳は「教科」タブ（必修以外）で確認できます。理解度＝教材（動画・ガイド・授業）の閲覧進捗、習熟度テスト＝修了判定。学習数・傾向は「推移」タブに全体で表示されます。']),
     );
   } catch (e) {
     console.warn('[ZSS] 必修以外予測の取得失敗:', e);
@@ -908,23 +950,26 @@ async function renderElectiveAnalysisTab(pane: HTMLElement, getCourses: () => Pr
   pane.textContent = '';
   pane.appendChild(h('div', { class: 'zss-empty' }, ['分析中…']));
   try {
-    const courses = await getCourses();
+    const courses = (await getCourses()) as ElectiveCourse[];
     pane.textContent = '';
     pane.appendChild(modeBadge('elective'));
     if (!courses.length) {
-      pane.appendChild(h('div', { class: 'zss-empty' }, ['着手中の必修以外コースがありません。']));
+      pane.appendChild(h('div', { class: 'zss-empty' }, ['受講中の必修以外コースがありません。']));
       return;
     }
-    const total = courses.reduce((a, c) => a + c.total, 0);
-    const passed = courses.reduce((a, c) => a + c.passed, 0);
-    const started = courses.filter((c) => c.passed > 0);
-    const doneCourses = courses.filter((c) => c.passed >= c.total);
-    const top = [...started].sort((a, b) => b.passed / b.total - a.passed / a.total)[0];
+    const compTotal = courses.reduce((a, c) => a + c.compLimit, 0);
+    const compDone = courses.reduce((a, c) => a + c.compDone, 0);
+    const started = courses.filter((c) => c.compDone > 0 || c.testPassed > 0);
+    const withComp = courses.filter((c) => c.compLimit > 0);
+    const top = [...withComp].sort((a, b) => b.compDone / b.compLimit - a.compDone / a.compLimit)[0];
+    const testTotal = courses.reduce((a, c) => a + c.testTotal, 0);
+    const testPassed = courses.reduce((a, c) => a + c.testPassed, 0);
     const sec: Section = {
       title: '必修以外の学習状況',
       insights: [
-        { kind: 'good', text: `全${courses.length}コース中 ${started.length} コースに着手・${doneCourses.length} コース完了。章 ${passed}/${total} 消化。` },
-        ...(top ? [{ kind: 'note' as const, text: `最も進んでいるのは「${top.title}」（${Math.round((top.passed / top.total) * 100)}%）。` }] : []),
+        { kind: 'good', text: `全${courses.length}コース中 ${started.length} コースに着手。理解度（教材の閲覧）${compDone}/${compTotal}${compTotal ? `（${Math.floor((compDone / compTotal) * 100)}%）` : ''}。` },
+        ...(testTotal ? [{ kind: 'note' as const, text: `習熟度テスト ${testPassed}/${testTotal} 合格。` }] : []),
+        ...(top && top.compDone > 0 ? [{ kind: 'note' as const, text: `最も進んでいるのは「${top.title}」（理解度 ${Math.floor((top.compDone / top.compLimit) * 100)}%）。` }] : []),
         { kind: 'note', text: '必修以外は締切が無い自己ペース学習のため、締切遵守率・トレンド等の分析は必修モードでのみ表示します。日々の学習数・傾向（曜日/時間帯）は「推移」タブに全体で出ます。' },
       ],
     };

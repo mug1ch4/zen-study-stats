@@ -154,18 +154,44 @@ export async function fetchMyCourses(): Promise<MyCourse[]> {
 }
 
 // 必修以外（選択科目・講座・大学連携＝type:"advanced"）。締切の概念が無い自己ペース学習。
-// 進捗は章単位（total_count/passed_count）。passed_materials は無いので basic とは別扱い。
-let electiveCache: { at: number; data: CourseMaterial[] } | null = null;
-/** 必修以外コースの章進捗（着手可能＝総章>0 のみ・章単位で {total,passed} に写像）。 */
-export async function fetchElectiveCourses(opts?: { fresh?: boolean }): Promise<CourseMaterial[]> {
+// 【データモデル・2026-07-18 本家UIと突合して確定】必修(n_school)の total_materials とは別軸:
+//   理解度 = comprehension（教材の閲覧進捗・(good+perfect)/limit）… 本家「課外授業」の「理解度%」
+//   習熟度テスト = my_courses の total_count/passed_count … 本家「習熟度テスト N/M」（旧実装が章数と誤認した値）
+//   checkpoint = 各教材のチェックポイント（補助軸）
+// CourseMaterial の total/passed には理解度（閲覧進捗）を入れ、習熟度テストは testTotal/testPassed に併記。
+export interface ElectiveCourse extends CourseMaterial {
+  compLimit: number; // 理解度の分母（閲覧対象の教材数＝動画/ガイド/授業）
+  compDone: number; // 閲覧済み（good+perfect）
+  testTotal: number; // 習熟度テスト 総数
+  testPassed: number; // 習熟度テスト 合格数
+}
+let electiveCache: { at: number; data: ElectiveCourse[] } | null = null;
+
+/** 必修以外コースの進捗（理解度＝comprehension＋習熟度テスト＝total_count）。学習実体のあるコースのみ。 */
+export async function fetchElectiveCourses(opts?: { fresh?: boolean }): Promise<ElectiveCourse[]> {
   if (!opts?.fresh && electiveCache && Date.now() - electiveCache.at < MAT_TTL_MS) return electiveCache.data;
-  const j = await getJSON<{ services?: { courses?: { id: number; title: string; progress?: { total_count?: number; passed_count?: number } }[] }[] }>(
+  const my = await getJSON<{ services?: { courses?: { id: number; title: string; progress?: { total_count?: number; passed_count?: number } }[] }[] }>(
     '/v3/dashboard/my_courses?service=advanced&limit=50&offset=0'
   );
-  const courses = j?.services?.[0]?.courses ?? [];
-  const data = courses
-    .map((c) => ({ id: c.id, title: c.title, total: c.progress?.total_count ?? 0, passed: c.progress?.passed_count ?? 0 }))
-    .filter((c) => c.total > 0); // 総章0（ガイド/診断の入口等）は対象外
+  const list = my?.services?.[0]?.courses ?? [];
+  if (!list.length) {
+    electiveCache = { at: Date.now(), data: [] };
+    return [];
+  }
+  const meta = new Map(list.map((c) => [c.id, { title: c.title, testTotal: c.progress?.total_count ?? 0, testPassed: c.progress?.passed_count ?? 0 }]));
+  // batch で comprehension（理解度）を取得（advanced の progress は comprehension/checkpoint）
+  const qs = 'mode=batch' + list.map((c) => `&ids[]=${c.id}`).join('');
+  const b = await getJSON<{ courses?: { id: number; progress?: { comprehension?: { limit?: number; good?: number; perfect?: number } } }[] }>(`/v2/material/courses?${qs}`);
+  const compById = new Map((b?.courses ?? []).map((c) => [c.id, c.progress?.comprehension]));
+  const data: ElectiveCourse[] = list
+    .map((c) => {
+      const m = meta.get(c.id)!;
+      const comp = compById.get(c.id);
+      const compLimit = comp?.limit ?? 0;
+      const compDone = (comp?.good ?? 0) + (comp?.perfect ?? 0);
+      return { id: c.id, title: m.title, total: compLimit, passed: compDone, compLimit, compDone, testTotal: m.testTotal, testPassed: m.testPassed };
+    })
+    .filter((c) => c.compLimit > 0 || c.testTotal > 0); // 学習実体（理解度 or 習熟度テスト）のあるコースのみ
   electiveCache = { at: Date.now(), data };
   return data;
 }
