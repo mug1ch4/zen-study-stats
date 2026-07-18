@@ -38,9 +38,10 @@ export function computeKpis(d: LearningAmounts): LearningKpis {
   };
 }
 
-/** 末尾(最新日)から遡り、amount>0 が連続する日数。null/0 で途切れる。
- *  ただし末尾＝今日が未学習でも連続は「生存中」なので昨日から数える
- *  （今日開いた時点で 0日 と出て、学習後に 9日 へ戻る違和感の修正。途切れ確定は丸1日空いてから）。 */
+/** 末尾(最新日)から遡り、amount>0 が連続する日数（＝「生存中の連続」）。null/0 で途切れる。
+ *  今日未学習でも昨日までの連続を返す（今日開いた時点で 0日と出る違和感の修正・v0.3.1）。
+ *  ※14日窓データ(learning_amounts)の配列末尾基準。全期間・カレンダー基準の streakInfo(deriveHistory)
+ *   とは「アンカーが実日付か配列末尾か」で役割が異なるため、あえて別実装（重複ではない）。 */
 export function computeStreak(days: DailyAmount[]): number {
   let i = days.length - 1;
   if (i >= 0 && !((days[i].amount ?? 0) > 0)) i--;

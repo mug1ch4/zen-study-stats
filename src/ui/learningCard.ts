@@ -509,19 +509,6 @@ async function renderPredictTab(
       fallbackPerDay = recentLearn.length ? recentLearn.reduce((a, p) => a + p.amount, 0) / recentLearn.length : undefined;
     }
 
-    // 曜日別ペース: 少数サンプルの曜日は全体平均へ縮小（ベイズ平均 C=3）。外れ日1つで暴れない。
-    const wdSum = [0, 0, 0, 0, 0, 0, 0];
-    const wdCnt = [0, 0, 0, 0, 0, 0, 0];
-    let allSum = 0;
-    for (const p of merged) {
-      const wd = new Date(p.date + 'T12:00:00').getDay();
-      wdSum[wd] += p.amount;
-      wdCnt[wd]++;
-      allSum += p.amount;
-    }
-    const overallDaily = merged.length ? allSum / merged.length : 1;
-    const weekdayWeights = wdSum.map((s, i) => bayesianAverage(s, wdCnt[i], overallDaily, 3));
-
     // 日次サンプルは必修の教材消化(passed_materials)の差分を優先（非必修を含む学習数は使わない）。
     // materialHistory が2点以上あればそれで組み、無いときだけ learning_amounts(合算)に退避。
     let dailySamples: { weekday: number; value: number }[];
@@ -543,6 +530,20 @@ async function renderPredictTab(
     } else {
       dailySamples = merged.map((p) => ({ weekday: new Date(p.date + 'T12:00:00').getDay(), value: p.amount }));
     }
+
+    // 曜日別ペース: dailySamples（必修の教材消化・上で構築）から算出。
+    // 予測カーブの曜日重みが非必修の曜日偏りで歪むのを防ぐ（合算 merged は使わない）。
+    // 少数サンプルの曜日は全体平均へ縮小（ベイズ平均 C=3）。外れ日1つで暴れない。
+    const wdSum = [0, 0, 0, 0, 0, 0, 0];
+    const wdCnt = [0, 0, 0, 0, 0, 0, 0];
+    let allSum = 0;
+    for (const sm of dailySamples) {
+      wdSum[sm.weekday] += sm.value;
+      wdCnt[sm.weekday]++;
+      allSum += sm.value;
+    }
+    const overallDaily = dailySamples.length ? allSum / dailySamples.length : 1;
+    const weekdayWeights = wdSum.map((s, i) => bayesianAverage(s, wdCnt[i], overallDaily, 3));
 
     const pred = computePrediction({
       totalMaterials: total,
@@ -744,7 +745,7 @@ async function renderAnalysisTab(
   pane.appendChild(h('div', { class: 'zss-empty' }, ['分析中…']));
   try {
     const series = await getSeriesOnce();
-    const [courses, report, hour, workTimes, coursePassedHist] = await Promise.all([getCourses(), fetchReportProgresses(), getHourStats(), getWorkTimes(), getCoursePassedHistory()]);
+    const [courses, report, hour, workTimes, coursePassedHist, mh] = await Promise.all([getCourses(), fetchReportProgresses(), getHourStats(), getWorkTimes(), getCoursePassedHistory(), getMaterialHistory()]);
     await recordDeadlineOutcomes(report.months); // 締切前の観測値を更新（遵守率の源・またぎで凍結）
     const deadlineOutcomes = await getDeadlineOutcomes();
     // 14日窓シードとマージ（新規でも分析可）
@@ -752,8 +753,22 @@ async function renderAnalysisTab(
     for (const p of series) dayMap.set(p.date, p.amount);
     for (const d of data.daily_amount) if (d.amount != null) dayMap.set(d.date, d.amount);
     const merged = [...dayMap.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, amount]) => ({ date, amount }));
-    const last14 = merged.slice(-14);
-    const recentPerDay = last14.length ? last14.reduce((a, p) => a + p.amount, 0) / last14.length : null;
+    // 必修アドバイスの「現在ペース」は必修の教材消化(passed_materials)の直近差分で判定する。
+    // learning_amounts(合算)だと非必修を多くやった日が「必修が順調」と誤判定するため。
+    // materialHistory が薄い(<2)ときだけ合算にフォールバック（その旨は requiredAdvice 側の文脈で許容）。
+    const nowMs = zenToday().getTime();
+    const matRec = mh.series.filter((p) => nowMs - new Date(p.date + 'T12:00:00').getTime() <= 28 * 86400000);
+    let recentPerDay: number | null = null;
+    if (matRec.length >= 2) {
+      const a = matRec[0];
+      const b = matRec[matRec.length - 1];
+      const days = Math.max(1, (new Date(b.date + 'T12:00:00').getTime() - new Date(a.date + 'T12:00:00').getTime()) / 86400000);
+      if (b.passed >= a.passed) recentPerDay = (b.passed - a.passed) / days;
+    }
+    if (recentPerDay === null) {
+      const last14 = merged.slice(-14);
+      recentPerDay = last14.length ? last14.reduce((a, p) => a + p.amount, 0) / last14.length : null;
+    }
 
     // 実績の判定を先に（歩みサマリで使う）
     const streak0 = streakInfo(merged);
