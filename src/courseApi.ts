@@ -153,6 +153,23 @@ export async function fetchMyCourses(): Promise<MyCourse[]> {
   return courses.map((c) => ({ id: c.id, title: c.title }));
 }
 
+// 必修以外（選択科目・講座・大学連携＝type:"advanced"）。締切の概念が無い自己ペース学習。
+// 進捗は章単位（total_count/passed_count）。passed_materials は無いので basic とは別扱い。
+let electiveCache: { at: number; data: CourseMaterial[] } | null = null;
+/** 必修以外コースの章進捗（着手可能＝総章>0 のみ・章単位で {total,passed} に写像）。 */
+export async function fetchElectiveCourses(opts?: { fresh?: boolean }): Promise<CourseMaterial[]> {
+  if (!opts?.fresh && electiveCache && Date.now() - electiveCache.at < MAT_TTL_MS) return electiveCache.data;
+  const j = await getJSON<{ services?: { courses?: { id: number; title: string; progress?: { total_count?: number; passed_count?: number } }[] }[] }>(
+    '/v3/dashboard/my_courses?service=advanced&limit=50&offset=0'
+  );
+  const courses = j?.services?.[0]?.courses ?? [];
+  const data = courses
+    .map((c) => ({ id: c.id, title: c.title, total: c.progress?.total_count ?? 0, passed: c.progress?.passed_count ?? 0 }))
+    .filter((c) => c.total > 0); // 総章0（ガイド/診断の入口等）は対象外
+  electiveCache = { at: Date.now(), data };
+  return data;
+}
+
 /** 複数コースの progress + chapters を1リクエストで。 */
 export async function fetchCoursesBatch(ids: number[]): Promise<CourseBatch[]> {
   if (!ids.length) return [];

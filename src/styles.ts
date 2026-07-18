@@ -259,6 +259,16 @@ export const CSS = `
 .zss-bd-ctrl { display: flex; align-items: center; gap: 10px; }
 .zss-bd-select { font-size: 11px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; max-width: 220px; }
 
+/* --- 学習モード切替（必修 / 必修以外） --- */
+.zss-mode-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
+.zss-mode-seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
+.zss-mode-seg button { border: none; background: none; color: var(--muted); font-size: 12px; font-weight: 700; padding: 5px 14px; border-radius: 999px; cursor: pointer; }
+.zss-mode-seg button.on { background: var(--primary); color: #fff; }
+.zss-mode-note { font-size: 10.5px; color: var(--faint); }
+.zss-mode-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 10px; border-radius: 999px; margin-bottom: 10px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+.zss-mode-badge.elective { background: color-mix(in srgb, var(--primary) 12%, var(--surface)); color: var(--primary-strong); border-color: color-mix(in srgb, var(--primary) 30%, var(--border)); }
+.zss-mode-common { font-size: 10.5px; color: var(--faint); margin-bottom: 8px; }
+
 /* --- 今日のデイリークエスト --- */
 .zss-quest {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;

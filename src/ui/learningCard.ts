@@ -21,7 +21,8 @@ import { countUp } from '../anim';
 import { notifyProgress, notifyQuest } from '../notify';
 import { getNotifyLog } from './toast';
 import { fetchReportProgresses } from '../api';
-import { fetchCourseMaterials } from '../courseApi';
+import { fetchCourseMaterials, fetchElectiveCourses } from '../courseApi';
+import { getStudyMode, setStudyMode, type StudyMode } from '../history';
 import { calendarData, trendPoints, streakInfo, type TrendMode } from '../deriveHistory';
 import { computePrediction, recommendedPace, type Prediction } from '../predictor';
 import { renderCalendar } from '../charts/calendar';
@@ -173,9 +174,10 @@ function renderNotifyLog(): HTMLElement {
 /** 詳細を [推移][予測][教科] の3タブで直下に表示（遅延描画で重い処理を回避）。
  *  日別バー等の軽いグラフは data から即描画、長期・予測・教科は必要時に取得。 */
 async function populateDetails(container: HTMLElement, tip: Tooltip, data: LearningAmounts, defaultTab = 0): Promise<void> {
-  // 教科データ(軽量)は予測・教科タブで共有（1回だけ取得）
+  let mode: StudyMode = await getStudyMode();
+  // 教科データ(軽量)は予測・教科タブで共有（1回だけ取得）。モードで取得元が変わる。
   let coursesP: Promise<CourseMaterial[]> | null = null;
-  const getCourses = () => (coursesP ??= fetchCourseMaterials());
+  const getCourses = () => (coursesP ??= mode === 'elective' ? fetchElectiveCourses() : fetchCourseMaterials());
   let seriesP: Promise<{ date: string; amount: number }[]> | null = null;
   const getSeriesOnce = () => (seriesP ??= getSeries());
 
@@ -183,11 +185,19 @@ async function populateDetails(container: HTMLElement, tip: Tooltip, data: Learn
   const done = [false, false, false, false];
   const renderers = [
     () => void renderRecentTab(panes[0], data, getSeriesOnce, tip),
-    () => void renderPredictTab(panes[1], getSeriesOnce, getCourses, tip, data),
-    () => void renderSubjectsTab(panes[2], getCourses, tip),
-    () => void renderAnalysisTab(panes[3], getSeriesOnce, getCourses, data),
+    () =>
+      mode === 'elective'
+        ? void renderElectivePredictTab(panes[1], getCourses)
+        : void renderPredictTab(panes[1], getSeriesOnce, getCourses, tip, data),
+    () => void renderSubjectsTab(panes[2], getCourses, tip, mode),
+    () =>
+      mode === 'elective'
+        ? void renderElectiveAnalysisTab(panes[3], getCourses)
+        : void renderAnalysisTab(panes[3], getSeriesOnce, getCourses, data),
   ];
+  let current = defaultTab;
   const select = (i: number) => {
+    current = i;
     panes.forEach((p, j) => (p.style.display = j === i ? 'block' : 'none'));
     if (!done[i]) {
       done[i] = true;
@@ -198,14 +208,45 @@ async function populateDetails(container: HTMLElement, tip: Tooltip, data: Learn
   // 予測タブ（今日の目標）と教科タブ（進捗ドーナツ）を最新の教科データで再描画する。
   const onCompletion = () => {
     if (!container.isConnected) { window.removeEventListener('zss:completion', onCompletion); return; }
-    coursesP = fetchCourseMaterials(); // メモ化キャッシュを最新の完了数で差し替え
-    if (done[1]) void renderPredictTab(panes[1], getSeriesOnce, getCourses, tip, data);
-    if (done[2]) void renderSubjectsTab(panes[2], getCourses, tip);
+    coursesP = null; // メモ化キャッシュを破棄（次回取得で最新の完了数）
+    if (done[1]) renderers[1]();
+    if (done[2]) renderers[2]();
   };
   window.addEventListener('zss:completion', onCompletion);
+
+  // モードトグル: 学習数ストリップと推移(0)はモード非依存＝常に全体。予測(1)/教科(2)/分析(3)が切替。
+  const setMode = async (m: StudyMode): Promise<void> => {
+    if (m === mode) return;
+    mode = m;
+    await setStudyMode(m);
+    coursesP = null;
+    done[1] = done[2] = done[3] = false; // モード依存タブを無効化して再描画
+    for (const el of panes.slice(1)) el.textContent = '';
+    if (current !== 0) select(current); // 推移以外を開いていれば即再描画
+  };
+  container.appendChild(renderModeToggle(mode, setMode));
   container.appendChild(tabBar(['推移', '予測', '教科', '分析'], select, defaultTab));
   for (const p of panes) container.appendChild(p);
   select(defaultTab);
+}
+
+/** 学習モード切替（必修 / 必修以外）。学習数ストリップと推移はモード非依存の全体。 */
+function renderModeToggle(mode: StudyMode, onChange: (m: StudyMode) => void): HTMLElement {
+  const seg = h('div', { class: 'zss-mode-seg' }, []);
+  const opts: [StudyMode, string][] = [['required', '必修'], ['elective', '必修以外']];
+  const btns = opts.map(([m, label]) => {
+    const b = h('button', m === mode ? { class: 'on' } : {}, [label]);
+    b.addEventListener('click', () => {
+      btns.forEach((x, i) => x.classList.toggle('on', opts[i][0] === m));
+      onChange(m);
+    });
+    return b;
+  });
+  for (const b of btns) seg.appendChild(b);
+  return h('div', { class: 'zss-mode-row' }, [
+    seg,
+    h('span', { class: 'zss-mode-note' }, ['↓ 予測・教科・分析が切り替わります（学習数・推移は全体で共通）']),
+  ]);
 }
 
 function tabBar(labels: string[], onSelect: (i: number) => void, initial = 0): HTMLElement {
@@ -229,6 +270,8 @@ async function renderRecentTab(
   getSeriesOnce: () => Promise<{ date: string; amount: number }[]>,
   tip: Tooltip
 ): Promise<void> {
+  // モード共通であることを明示（トグルが「選択科目」でも推移は全学習の合計）
+  pane.appendChild(h('div', { class: 'zss-mode-common' }, ['このタブは必修＋必修以外を合わせた全学習の推移です（モード共通）。']));
   // --- 直近14日（data から即描画） ---
   pane.appendChild(
     section('日別の学習数', '2週平均を基準線に · 棒=学習あり／薄い印=0／破線=記録なし', [
@@ -591,14 +634,25 @@ async function renderPredictTab(
   }
 }
 
-/** 教科タブ: 残教材の一覧（ティアA・即時）＋ ボタンで 動画時間/テスト/レポートの残/総（ティアB・重い）。 */
-async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<CourseMaterial[]>, tip: Tooltip): Promise<void> {
+/** 教科タブ: 残教材の一覧（ティアA・即時）＋ ボタンで 動画時間/テスト/レポートの残/総（ティアB・重い）。
+ *  elective モードは章単位の軽量一覧（advancedは章構造が別＝重い集計はしない）。 */
+async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<CourseMaterial[]>, tip: Tooltip, mode: StudyMode = 'required'): Promise<void> {
   void tip;
   pane.textContent = ''; // 完了検知の再描画時の二重表示防止
   pane.appendChild(h('div', { class: 'zss-empty' }, ['読み込み中…']));
   try {
     const courses = await getCourses();
     pane.textContent = '';
+    if (mode === 'elective') {
+      pane.appendChild(modeBadge('elective'));
+      if (!courses.length) {
+        pane.appendChild(h('div', { class: 'zss-empty' }, ['着手中の必修以外コースはありません（総章のある選択科目・講座がここに表示されます）。']));
+        return;
+      }
+      pane.appendChild(h('div', { class: 'zss-analysis-sub' }, ['章単位の進捗（必修以外は自己ペース＝締切はありません）。残りの多い順。']));
+      pane.appendChild(renderSubjectRemaining(courses, '章'));
+      return;
+    }
     const tierA = renderSubjectRemaining(courses);
     const volBody = h('div', {}, []);
     // 詳細（教科別シェアの色分けドーナツ・動画時間/テスト/レポートの内訳）はボタン押下で集計。
@@ -767,17 +821,17 @@ function renderInsightSection(sec: Section): HTMLElement {
   ]);
 }
 
-/** 教科別の残作業内訳（残教材の多い順・未着手を明示）。 */
-function renderSubjectRemaining(courses: { id: number; title: string; total: number; passed: number }[]): HTMLElement {
+/** 教科別の残作業内訳（残の多い順・未着手を明示）。unit=集計単位ラベル（既定「教材」・electiveは「章」）。 */
+function renderSubjectRemaining(courses: { id: number; title: string; total: number; passed: number }[], unit = '教材'): HTMLElement {
   const sorted = [...courses].sort((a, b) => (b.total - b.passed) - (a.total - a.passed));
   const passedAll = courses.reduce((a, c) => a + c.passed, 0);
   const totalAll = courses.reduce((a, c) => a + c.total, 0);
   const pctAll = totalAll ? Math.round((passedAll / totalAll) * 100) : 0;
   const donutSummary = h('div', { class: 'zss-vol-summary zss-vol-summary-flex' }, [
-    renderDonut(passedAll, totalAll, { size: 96, label: '教材' }),
+    renderDonut(passedAll, totalAll, { size: 96, label: unit }),
     h('div', { class: 'zss-vol-sum-body' }, [
-      h('div', { class: 'zss-vol-sum-main' }, [`全${courses.length}コース · 教材 ${passedAll}/${totalAll}（${pctAll}%）`]),
-      h('div', { class: 'zss-vol-sum-note' }, [`残り ${totalAll - passedAll} 教材`]),
+      h('div', { class: 'zss-vol-sum-main' }, [`全${courses.length}コース · ${unit} ${passedAll}/${totalAll}（${pctAll}%）`]),
+      h('div', { class: 'zss-vol-sum-note' }, [`残り ${totalAll - passedAll} ${unit}`]),
     ]),
   ]);
   const rows = sorted.map((c) => {
@@ -795,7 +849,7 @@ function renderSubjectRemaining(courses: { id: number; title: string; total: num
     ]);
     return row;
   });
-  return section('教科別の残り', '残教材の多い順', [
+  return section('教科別の残り', `残${unit}の多い順`, [
     donutSummary,
     ...rows,
     dataTable(
@@ -804,6 +858,83 @@ function renderSubjectRemaining(courses: { id: number; title: string; total: num
       sorted.map((c) => [c.title, Math.max(0, c.total - c.passed), c.passed, c.total])
     ),
   ]);
+}
+
+/** モードのラベル小バッジ（elective ペイン冒頭に「必修以外」を明示）。 */
+function modeBadge(mode: StudyMode): HTMLElement {
+  return h('div', { class: 'zss-mode-badge' + (mode === 'elective' ? ' elective' : '') }, [
+    mode === 'elective' ? '必修以外（選択科目・講座）' : '必修',
+  ]);
+}
+
+/** 予測タブ（必修以外）: 締切が無いので消化状況＋着手サマリの軽量版。 */
+async function renderElectivePredictTab(pane: HTMLElement, getCourses: () => Promise<CourseMaterial[]>): Promise<void> {
+  pane.textContent = '';
+  pane.appendChild(h('div', { class: 'zss-empty' }, ['読み込み中…']));
+  try {
+    const courses = await getCourses();
+    pane.textContent = '';
+    pane.appendChild(modeBadge('elective'));
+    const total = courses.reduce((a, c) => a + c.total, 0);
+    const passed = courses.reduce((a, c) => a + c.passed, 0);
+    const started = courses.filter((c) => c.passed > 0).length;
+    const doneCourses = courses.filter((c) => c.total > 0 && c.passed >= c.total).length;
+    const pct = total ? Math.round((passed / total) * 100) : 0;
+    pane.appendChild(
+      h('div', { class: 'zss-deadline ok' }, [
+        h('div', { class: 'zss-deadline-head' }, ['必修以外は自己ペース']),
+        h('div', { class: 'zss-deadline-body' }, ['選択科目・講座に提出締切はありません。年度レポート完了予測（締切逆算）は必修モードでのみ表示します。ここでは消化状況を表示します。']),
+      ])
+    );
+    pane.appendChild(
+      h('div', { class: 'zss-kpis' }, [
+        kpiTile(`${passed}/${total}`, `章 進捗（${pct}%）`),
+        kpiTile(`${started}/${courses.length}`, '着手コース'),
+        kpiTile(`${doneCourses}`, '完了コース'),
+      ])
+    );
+    pane.appendChild(
+      h('div', { class: 'zss-pred-note' }, ['必修以外の詳しい残量は「教科」タブ（必修以外）で確認できます。※進捗は章単位（total_count/passed_count）。学習数・傾向は「推移」タブに全体で表示されます。']),
+    );
+  } catch (e) {
+    console.warn('[ZSS] 必修以外予測の取得失敗:', e);
+    pane.textContent = '';
+    pane.appendChild(h('div', { class: 'zss-empty' }, ['必修以外のデータを取得できませんでした。']));
+  }
+}
+
+/** 分析タブ（必修以外）: 着手状況の軽量サマリ（締切遵守などの必修指標は出さない）。 */
+async function renderElectiveAnalysisTab(pane: HTMLElement, getCourses: () => Promise<CourseMaterial[]>): Promise<void> {
+  pane.textContent = '';
+  pane.appendChild(h('div', { class: 'zss-empty' }, ['分析中…']));
+  try {
+    const courses = await getCourses();
+    pane.textContent = '';
+    pane.appendChild(modeBadge('elective'));
+    if (!courses.length) {
+      pane.appendChild(h('div', { class: 'zss-empty' }, ['着手中の必修以外コースがありません。']));
+      return;
+    }
+    const total = courses.reduce((a, c) => a + c.total, 0);
+    const passed = courses.reduce((a, c) => a + c.passed, 0);
+    const started = courses.filter((c) => c.passed > 0);
+    const doneCourses = courses.filter((c) => c.passed >= c.total);
+    const top = [...started].sort((a, b) => b.passed / b.total - a.passed / a.total)[0];
+    const sec: Section = {
+      title: '必修以外の学習状況',
+      insights: [
+        { kind: 'good', text: `全${courses.length}コース中 ${started.length} コースに着手・${doneCourses.length} コース完了。章 ${passed}/${total} 消化。` },
+        ...(top ? [{ kind: 'note' as const, text: `最も進んでいるのは「${top.title}」（${Math.round((top.passed / top.total) * 100)}%）。` }] : []),
+        { kind: 'note', text: '必修以外は締切が無い自己ペース学習のため、締切遵守率・トレンド等の分析は必修モードでのみ表示します。日々の学習数・傾向（曜日/時間帯）は「推移」タブに全体で出ます。' },
+      ],
+    };
+    pane.appendChild(h('div', { class: 'zss-analysis-head' }, ['必修以外の学習傾向']));
+    pane.appendChild(renderInsightSection(sec));
+  } catch (e) {
+    console.warn('[ZSS] 必修以外分析の取得失敗:', e);
+    pane.textContent = '';
+    pane.appendChild(h('div', { class: 'zss-empty' }, ['必修以外のデータを取得できませんでした。']));
+  }
 }
 
 function progressBar(pct: number): HTMLElement {

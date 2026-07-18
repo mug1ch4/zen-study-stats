@@ -319,6 +319,27 @@ export async function savePredSnapshot(entry: PredLogEntry): Promise<void> {
   }
 }
 
+// --- 学習モード: 必修(required) / 必修以外(elective)。予測・教科・分析タブの対象を切替 ---
+const KEY_MODE = 'zss:studyMode';
+export type StudyMode = 'required' | 'elective';
+export async function getStudyMode(): Promise<StudyMode> {
+  if (memOverride) return 'required';
+  try {
+    const r = await chrome.storage.local.get([KEY_MODE]);
+    return r?.[KEY_MODE] === 'elective' ? 'elective' : 'required';
+  } catch {
+    return 'required';
+  }
+}
+export async function setStudyMode(m: StudyMode): Promise<void> {
+  if (memOverride) return;
+  try {
+    await chrome.storage.local.set({ [KEY_MODE]: m });
+  } catch {
+    /* ignore */
+  }
+}
+
 // --- 表示設定: 視聴任意の補助教材（supplement動画）を残り学習量に含めるか ---
 // 本家準拠の進捗（完了%・予測・今日の目標）には影響しない。拡張の自前集計の表示のみ。
 const KEY_INCSUPP = 'zss:includeSupp';
