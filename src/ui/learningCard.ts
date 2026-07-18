@@ -310,7 +310,7 @@ async function renderRecentTab(
     // 日別パンチカード用イベント（受験＝実測・動画＝補間）
     const punchEvents: PunchEvent[] = [
       ...resultEvents(rlog).map((e) => ({ at: e.at, kind: 'sub' as const })),
-      ...movieEvents.map((m) => ({ at: m.at, kind: 'movie' as const })),
+      ...movieEvents.map((m) => ({ at: m.at, kind: 'movie' as const, u: m.uncertaintySec })),
     ];
     const NOTES = {
       live: '学習が進む時間帯（完了検知でその時刻を記録・自動更新）',

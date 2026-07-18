@@ -19,18 +19,30 @@ export interface ChapterSkel {
 export type ChapterSkels = Record<string, ChapterSkel>; // key: chapterId
 
 export interface MovieEvent {
-  at: number; // 推定完了時刻 epoch秒
+  at: number; // 推定完了時刻 epoch秒（実行可能区間の中点）
   courseId: number;
   len: number; // 動画の秒数
+  uncertaintySec: number; // 推定の最大誤差（±この秒数。＝スラック/2）
 }
 
-// gap（アンカー間の実経過）の採用条件: S*FIT_TOL ≤ gap ≤ S + slack。
-// 下限: 動画合計より明確に短い＝この窓では見ていない（別時期に視聴済み）。
-// 上限: 合計＋slack を超える＝途中に長い中断（時間帯の推定に使えない）。
-const FIT_TOL = 0.85;
-const DEFAULT_SLACK_SEC = 60 * 60; // アンカー自身の解答時間＋小休憩ぶん
+// 妥当性チェックの根拠（公開研究に基づく・2026-07 調査）:
+// 1) time-on-task 推定（学習分析）: ログ間隙への時間帰属はセッション・タイムアウト閾値
+//    （10/30/60分）が標準的ヒューリスティックで、閾値選択が結論を左右する
+//    （Kovanović et al., "Does Time-on-task Estimation Matter?", J. Learning Analytics 2015）。
+//    → 許容スラック（アンカー間の非動画時間＝解答・小休憩）は保守的な30分を既定とする。
+// 2) 区間打ち切り（interval censoring）の補完: 中点補完は区間が短いときほぼ不偏、
+//    区間が長いと偏る（短い censoring interval なら相対バイアス数%以内・被覆確率も名目近傍）。
+//    → 完了時刻は実行可能区間 [最早=前詰め, 最遅=後詰め] の中点に置き（前詰め＝下限補完の
+//    早方向バイアスを排除）、区間半幅（＝スラック/2）が MAX_UNCERTAINTY 以下の場合のみ採用
+//    （時間帯バケット幅60分に対し ±15分なら概ね正しいバケットに入る）。
+// 3) 物理制約: 必修動画は倍速不可・直列（本家仕様）→ gap ≥ 動画合計 S は硬い下限
+//    （丸め誤差のみ許容 FIT_TOL=0.95）。gap < S*0.95 は「この窓では見ていない」＝不採用。
+const FIT_TOL = 0.95;
+const DEFAULT_SLACK_SEC = 30 * 60; // セッション・タイムアウト規範に合わせた保守値
+const MAX_UNCERTAINTY_SEC = 15 * 60; // 採用条件: 中点補完の最大誤差 ±15分以下
 
-/** アンカー間に挟まれた passed 動画の完了時刻を推定。採用できない窓は黙って捨てる。 */
+/** アンカー間に挟まれた passed 動画の完了時刻を推定（中点補完・不確かさ付き）。
+ *  採用できない窓（中断・逆順・幅不整合・不確かさ過大）は黙って捨てる。 */
 export function interpolateMovieEvents(skels: ChapterSkels, entries: ResultEntry[], slackSec = DEFAULT_SLACK_SEC): MovieEvent[] {
   // 各教材の「その学習セッションの時刻」= 初回受験(firstAt)。無ければ latestAt。
   const anchorTime = new Map<number, number>();
@@ -53,11 +65,17 @@ export function interpolateMovieEvents(skels: ChapterSkels, entries: ResultEntry
       if (!movies.length) continue;
       const S = movies.reduce((x, m) => x + m.len, 0);
       const gap = b.t - a.t;
-      if (gap < S * FIT_TOL || gap > S + slackSec) continue; // 幅が整合しない
-      let cursor = a.t;
+      if (gap < S * FIT_TOL) continue; // 物理制約違反＝この窓では見ていない
+      const slack = gap - S; // 窓内の非動画時間（どこに挟まったかは不明）
+      if (slack > slackSec) continue; // 長い中断＝時間推定に使えない
+      const half = Math.max(0, slack / 2);
+      if (half > MAX_UNCERTAINTY_SEC) continue; // 中点補完の誤差が大きすぎる
+      // 実行可能区間: 最早 = A直後から前詰め、最遅 = B直前へ後詰め。中点に置く。
+      let prefix = 0;
       for (const m of movies) {
-        cursor += m.len;
-        out.push({ at: cursor, courseId: sk.courseId, len: m.len });
+        prefix += m.len;
+        const earliest = a.t + prefix;
+        out.push({ at: Math.round(earliest + half), courseId: sk.courseId, len: m.len, uncertaintySec: Math.round(half) });
       }
     }
   }

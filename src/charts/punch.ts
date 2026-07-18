@@ -13,6 +13,7 @@ const DAY = 86400000;
 export interface PunchEvent {
   at: number; // epoch秒
   kind: 'sub' | 'movie'; // 受験（実測） / 動画（補間）
+  u?: number; // 補間の最大誤差（±秒。movie のみ）
 }
 
 export function renderPunch(events: PunchEvent[], tip: Tooltip): SVGElement {
@@ -62,7 +63,8 @@ export function renderPunch(events: PunchEvent[], tip: Tooltip): SVGElement {
       onmousemove: (e: Event) => {
         const me = e as MouseEvent;
         const d = parseDate(dkey);
-        tip.show(me.clientX, me.clientY, `<b>${d.getMonth() + 1}/${d.getDate()} ${fmt2(jst.getUTCHours())}:${fmt2(jst.getUTCMinutes())}</b> ${isSub ? 'テスト/レポート受験' : '動画完了（補間）'}`);
+        const uMin = ev.u ? Math.max(1, Math.round(ev.u / 60)) : 0;
+        tip.show(me.clientX, me.clientY, `<b>${d.getMonth() + 1}/${d.getDate()} ${fmt2(jst.getUTCHours())}:${fmt2(jst.getUTCMinutes())}</b> ${isSub ? 'テスト/レポート受験' : `動画完了（補間${uMin ? `・±${uMin}分` : '・誤差なし'}）`}`);
       },
       onmouseleave: () => tip.hide(),
     });
