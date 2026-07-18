@@ -360,6 +360,10 @@ export const CSS = `
   .zss-aslice { animation: zss-fade .4s ease-out both; }
   /* 数値カウントアップ中の等幅ゆらぎ防止 */
   .zss-count { font-variant-numeric: tabular-nums; }
+  /* 完了バッジ: モーション許容時だけ隠して描画アニメ。静止時は要素の presentation 属性
+     (stroke-dashoffset=0=表示) が効くため、reduced-motion でもバッジは見える。 */
+  .zss-cbadge-ring { stroke-dasharray: var(--circ); stroke-dashoffset: var(--circ); animation: zss-arc .6s ease-out .1s forwards; }
+  .zss-cbadge-check { stroke-dasharray: 1; stroke-dashoffset: 1; animation: zss-draw .45s ease-out .55s forwards; }
 }
 
 .zss-vol-hint { font-size: 11px; color: var(--muted); margin: 6px 2px 4px; line-height: 1.5; }
