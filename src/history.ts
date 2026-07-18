@@ -120,38 +120,44 @@ export async function snapshotMaterials(passed: number, total: number): Promise<
   }
 }
 
-// 教科ごとの passed 履歴（教科別ペース＝将来の「教科別ETA・締切リスク」の土台）。
+// 教科ごとの passed 履歴（教科別ペース＝「教科別ETA・締切リスク」の土台）。
 // { "YYYY-MM-DD": { [courseId]: passed } }。日次スナップで1日1点。
 const KEY_COURSEHIST = 'zss:coursePassedHist';
+// 必修以外（advanced）の理解度（閲覧済み教材数）履歴。完了見込み予測の土台。
+const KEY_ELECTHIST = 'zss:electivePassedHist';
 export type CoursePassedHistory = { date: string; byCourse: Record<number, number> }[];
 
-export async function snapshotCoursePassed(courses: { id: number; passed: number }[]): Promise<void> {
+async function snapshotPassedTo(key: string, courses: { id: number; passed: number }[]): Promise<void> {
   if (memOverride || !courses.length) return;
   try {
-    const r = await chrome.storage.local.get([KEY_COURSEHIST]);
-    const h = (r?.[KEY_COURSEHIST] as Record<string, Record<number, number>>) ?? {};
+    const r = await chrome.storage.local.get([key]);
+    const h = (r?.[key] as Record<string, Record<number, number>>) ?? {};
     const day: Record<number, number> = {};
     for (const c of courses) day[c.id] = c.passed;
     h[todayISO()] = day;
-    // 剪定: 直近120日分だけ保持
     const keys = Object.keys(h).sort();
-    while (keys.length > 120) delete h[keys.shift()!];
-    await chrome.storage.local.set({ [KEY_COURSEHIST]: h });
+    while (keys.length > 120) delete h[keys.shift()!]; // 直近120日分だけ保持
+    await chrome.storage.local.set({ [key]: h });
   } catch {
     /* ignore */
   }
 }
-
-export async function getCoursePassedHistory(): Promise<CoursePassedHistory> {
+async function getPassedHistoryFrom(key: string): Promise<CoursePassedHistory> {
   if (memOverride) return [];
   try {
-    const r = await chrome.storage.local.get([KEY_COURSEHIST]);
-    const h = (r?.[KEY_COURSEHIST] as Record<string, Record<number, number>>) ?? {};
+    const r = await chrome.storage.local.get([key]);
+    const h = (r?.[key] as Record<string, Record<number, number>>) ?? {};
     return Object.keys(h).sort().map((date) => ({ date, byCourse: h[date] }));
   } catch {
     return [];
   }
 }
+
+export const snapshotCoursePassed = (courses: { id: number; passed: number }[]) => snapshotPassedTo(KEY_COURSEHIST, courses);
+export const getCoursePassedHistory = () => getPassedHistoryFrom(KEY_COURSEHIST);
+/** 必修以外の理解度（閲覧済み教材数）を教科別に日次スナップ（完了見込み予測用）。 */
+export const snapshotElectivePassed = (courses: { id: number; passed: number }[]) => snapshotPassedTo(KEY_ELECTHIST, courses);
+export const getElectiveHistory = () => getPassedHistoryFrom(KEY_ELECTHIST);
 
 // 当日始点の passed_materials（デイリー目標の「今日の完了数」を確実に差分算出するため）。
 const KEY_DAYSTART = 'zss:dayStart'; // { date:"YYYY-MM-DD", passed:number }

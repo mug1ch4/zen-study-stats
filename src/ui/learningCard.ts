@@ -10,7 +10,7 @@ import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
 import { evaluateCalibration } from '../calibration';
 import { reportDeadlineStatus, type DeadlineStatus } from '../deadlines';
 import { computeCourseDeadlineRisks, type CourseDeadlineRisk } from '../deadlineRisk';
-import { computeCoursePaces } from '../coursePace';
+import { computeCoursePaces, overallForecast } from '../coursePace';
 import { fetchMonthlyReport } from '../api';
 import { zenWeekStartISO } from '../format';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, deadlineTendency, coursePaceTendency, type Section } from '../analysis';
@@ -22,7 +22,7 @@ import { notifyProgress, notifyQuest } from '../notify';
 import { getNotifyLog } from './toast';
 import { fetchReportProgresses } from '../api';
 import { fetchCourseMaterials, fetchElectiveCourses, type ElectiveCourse } from '../courseApi';
-import { getStudyMode, setStudyMode, type StudyMode } from '../history';
+import { getStudyMode, setStudyMode, snapshotElectivePassed, getElectiveHistory, type StudyMode } from '../history';
 import { calendarData, trendPoints, streakInfo, type TrendMode } from '../deriveHistory';
 import { computePrediction, recommendedPace, type Prediction } from '../predictor';
 import { renderCalendar } from '../charts/calendar';
@@ -922,12 +922,45 @@ async function renderElectivePredictTab(pane: HTMLElement, getCourses: () => Pro
     const testPassed = courses.reduce((a, c) => a + c.testPassed, 0);
     const started = courses.filter((c) => c.compDone > 0 || c.testPassed > 0).length;
     const pct = compTotal ? Math.floor((compDone / compTotal) * 100) : 0;
-    pane.appendChild(
-      h('div', { class: 'zss-deadline ok' }, [
-        h('div', { class: 'zss-deadline-head' }, ['必修以外は自己ペース']),
-        h('div', { class: 'zss-deadline-body' }, ['選択科目・講座に提出締切はありません。年度レポート完了予測（締切逆算）は必修モードでのみ表示します。ここでは本家「課外授業」と同じ指標（理解度・習熟度テスト）で消化状況を表示します。']),
-      ])
-    );
+    const remaining = Math.max(0, compTotal - compDone);
+
+    // カード表示時にも理解度を1日1点スナップ（予測の記録を早く貯める）
+    void snapshotElectivePassed(courses.map((c) => ({ id: c.id, passed: c.compDone })));
+    const hist = await getElectiveHistory().catch(() => []);
+    const fc = remaining > 0 ? overallForecast(hist, remaining) : null;
+
+    // 完了見込み（順当に進めば◯頃）カード
+    if (remaining === 0 && compTotal > 0) {
+      pane.appendChild(
+        h('div', { class: 'zss-deadline ok' }, [
+          h('div', { class: 'zss-deadline-head' }, ['必修以外の完了見込み']),
+          h('div', { class: 'zss-deadline-body' }, ['受講中の必修以外コースの教材（理解度）はすべて閲覧済みです。']),
+        ])
+      );
+    } else if (fc && fc.etaDays !== null && fc.samples >= 2) {
+      const finish = new Date(zenToday().getTime() + fc.etaDays * 86400000);
+      pane.appendChild(
+        h('div', { class: 'zss-deadline ok' }, [
+          h('div', { class: 'zss-deadline-head' }, ['必修以外の完了見込み']),
+          h('div', { class: 'zss-deadline-main' }, [
+            h('b', {}, [`${finish.getMonth() + 1}/${finish.getDate()} ごろ`]),
+            h('span', { class: 'sub' }, [`　順当に進めば（現在ペース 約${r1w(fc.perWeek)}/週）残り ${remaining} 教材を約${fc.etaDays}日で`]),
+          ]),
+          h('div', { class: 'zss-deadline-note' }, ['締切はありません（自己ペース）。この見込みは「理解度＝教材の閲覧進捗」の現在ペースからの目安です。ペースが上がれば早まります。']),
+        ])
+      );
+    } else {
+      pane.appendChild(
+        h('div', { class: 'zss-deadline ok' }, [
+          h('div', { class: 'zss-deadline-head' }, ['必修以外は自己ペース']),
+          h('div', { class: 'zss-deadline-body' }, [
+            fc && fc.etaDays === null
+              ? '直近は理解度が進んでいないため完了見込みは未定です。教材を進めるとペースから見込みを表示します。'
+              : '完了見込みはペース記録を数日ぶん貯めてから表示します（理解度の日次スナップを開始しました）。締切はありません（自己ペース）。',
+          ]),
+        ])
+      );
+    }
     pane.appendChild(
       h('div', { class: 'zss-kpis' }, [
         kpiTile(`${pct}%`, `理解度（${compDone}/${compTotal}）`),

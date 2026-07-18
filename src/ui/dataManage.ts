@@ -26,7 +26,7 @@ const SKIP_KEYS = new Set([
   'zss:chapterSkels', // 章の教材並びキャッシュ（詳細ログ抽出の実行で再構築可能）
 ]);
 // 日付→数値の履歴系（インポート時に統合する）
-const HIST_KEYS = new Set(['zss:history', 'zss:reportHist', 'zss:materialHist', 'zss:materialTotalHist', 'zss:coursePassedHist', 'zss:deadlineOutcomes', 'zss:resultLog']);
+const HIST_KEYS = new Set(['zss:history', 'zss:reportHist', 'zss:materialHist', 'zss:materialTotalHist', 'zss:coursePassedHist', 'zss:electivePassedHist', 'zss:deadlineOutcomes', 'zss:resultLog']);
 // 時間帯の学習記録（24時間バケットの加算カウンタ）。復元先が空＝そのまま、既存あり＝合算で統合。
 const HOUR_KEY = 'zss:hourStats';
 

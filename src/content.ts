@@ -1,10 +1,10 @@
 // コンテンツスクリプトのエントリ。
 // 【第一原則】GETのみ・read-only。DOMは自ブラウザの描画変更のみ。学習記録は一切変更しない。
 import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } from './api';
-import { fetchMaterialTotals, fetchCourseMaterials, fetchSectionQuestions } from './courseApi';
+import { fetchMaterialTotals, fetchCourseMaterials, fetchSectionQuestions, fetchElectiveCourses } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, initDarkModeFrame, preInitDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
-import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, snapshotCoursePassed, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, weekBaselinePassed, getSeries, recordWorkTime, recordDeadlineOutcomes } from './history';
+import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, snapshotCoursePassed, snapshotElectivePassed, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, weekBaselinePassed, getSeries, recordWorkTime, recordDeadlineOutcomes } from './history';
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureMyCourseUndone } from './myCourseInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
@@ -338,6 +338,13 @@ function startup(): void {
       }
     } catch {
       /* 教材取得失敗も他を妨げない */
+    }
+    try {
+      // 必修以外（advanced）の理解度（閲覧済み教材数）を教科別に日次スナップ（完了見込み予測の土台）
+      const elective = await fetchElectiveCourses();
+      await snapshotElectivePassed(elective.map((c) => ({ id: c.id, passed: c.compDone })));
+    } catch {
+      /* 必修以外の取得失敗は本流を妨げない */
     }
   });
   patchHistory();

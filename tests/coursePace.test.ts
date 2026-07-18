@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeCoursePaces, courseEtaDays } from '../src/coursePace';
+import { computeCoursePaces, courseEtaDays, overallForecast } from '../src/coursePace';
 import type { CoursePassedHistory } from '../src/history';
 
 const hist = (rows: [string, Record<number, number>][]): CoursePassedHistory =>
@@ -42,5 +42,38 @@ describe('courseEtaDays', () => {
   it('残り0 → 0・ペース0 → null', () => {
     expect(courseEtaDays(0, 2)).toBe(0);
     expect(courseEtaDays(10, 0)).toBeNull();
+  });
+});
+
+describe('overallForecast（必修以外の完了見込み）', () => {
+  const now = new Date('2026-07-04T12:00:00').getTime();
+  it('全体ペースと残りから完了見込み日数', () => {
+    // 全体 compDone: 15→18→21→24（+3/日）。残り30 → 10日。
+    const h = hist([
+      ['2026-07-01', { 1: 10, 2: 5 }],
+      ['2026-07-02', { 1: 12, 2: 6 }],
+      ['2026-07-03', { 1: 14, 2: 7 }],
+      ['2026-07-04', { 1: 16, 2: 8 }],
+    ]);
+    const fc = overallForecast(h, 30, 28 * 86400000, now);
+    expect(fc?.perDay).toBeCloseTo(3, 5);
+    expect(fc?.perWeek).toBeCloseTo(21, 5);
+    expect(fc?.etaDays).toBe(10);
+    expect(fc?.samples).toBe(3);
+  });
+  it('減少区間は除外して純増だけで推定', () => {
+    const h = hist([
+      ['2026-07-02', { 1: 100 }],
+      ['2026-07-03', { 1: 3 }], // リセット → 除外
+      ['2026-07-04', { 1: 6 }],
+    ]);
+    const fc = overallForecast(h, 9, 28 * 86400000, now);
+    expect(fc?.perDay).toBeCloseTo(3, 5); // 3→6 の +3 のみ
+    expect(fc?.etaDays).toBe(3);
+  });
+  it('履歴不足は null・ペース0は etaDays null', () => {
+    expect(overallForecast(hist([['2026-07-04', { 1: 5 }]]), 10, 28 * 86400000, now)).toBeNull();
+    const flat = overallForecast(hist([['2026-07-03', { 1: 5 }], ['2026-07-04', { 1: 5 }]]), 10, 28 * 86400000, now);
+    expect(flat?.etaDays).toBeNull(); // 全く進んでいない
   });
 });

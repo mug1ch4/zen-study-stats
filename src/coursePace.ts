@@ -51,3 +51,34 @@ export function courseEtaDays(remaining: number, perDay: number): number | null 
   if (perDay <= 0) return null;
   return Math.ceil(remaining / perDay);
 }
+
+export interface OverallForecast {
+  perDay: number; // 全体の消化ペース（教材/日）
+  perWeek: number;
+  etaDays: number | null; // 残りをこのペースで消化する日数。perDay<=0 は null
+  samples: number; // 使った区間数（信頼度）
+}
+
+/** 全体の完了見込み（教科別 passed 履歴の合計系列から線形推定）。
+ *  必修以外の「順当に進めば◯日で完了」用。減少区間（コース入替等）は除外。 */
+export function overallForecast(history: CoursePassedHistory, remaining: number, windowMs = 28 * DAY, nowMs = 0): OverallForecast | null {
+  if (history.length < 2) return null;
+  const totals = history.map((h) => ({ t: new Date(h.date + 'T12:00:00').getTime(), v: Object.values(h.byCourse).reduce((a, b) => a + b, 0) }));
+  const now = nowMs || totals[totals.length - 1].t;
+  const inWin = totals.filter((p) => now - p.t <= windowMs);
+  if (inWin.length < 2) return null;
+  let delta = 0;
+  let days = 0;
+  let samples = 0;
+  for (let i = 1; i < inWin.length; i++) {
+    const d = inWin[i].v - inWin[i - 1].v;
+    if (d < 0) continue; // 減少（入替/リセット）は除外
+    const gap = Math.max(1, Math.round((inWin[i].t - inWin[i - 1].t) / DAY));
+    delta += d;
+    days += gap;
+    samples++;
+  }
+  if (samples < 1 || days <= 0) return null;
+  const perDay = delta / days;
+  return { perDay, perWeek: perDay * 7, etaDays: courseEtaDays(remaining, perDay), samples };
+}
