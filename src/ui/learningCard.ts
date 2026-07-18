@@ -492,8 +492,22 @@ async function renderPredictTab(
     for (const d of data.daily_amount) if (d.amount != null) dayMap.set(d.date, d.amount);
     const merged = [...dayMap.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, amount]) => ({ date, amount }));
 
-    const recentLearn = merged.slice(-14);
-    const fallbackPerDay = recentLearn.length ? recentLearn.reduce((a, p) => a + p.amount, 0) / recentLearn.length : undefined;
+    // フォールバックペースも必修の教材消化(passed_materials)の直近差分から。
+    // materialHistory が無い（導入初日）ときだけ learning_amounts(合算)を最後の手段に使う。
+    const DAYMS = 86400000;
+    const nowT = zenToday().getTime();
+    const matRecent = mh.series.filter((p) => nowT - new Date(p.date + 'T12:00:00').getTime() <= 28 * DAYMS);
+    let fallbackPerDay: number | undefined;
+    if (matRecent.length >= 2) {
+      const a = matRecent[0];
+      const b = matRecent[matRecent.length - 1];
+      const days = Math.max(1, (new Date(b.date + 'T12:00:00').getTime() - new Date(a.date + 'T12:00:00').getTime()) / DAYMS);
+      if (b.passed >= a.passed) fallbackPerDay = (b.passed - a.passed) / days;
+    }
+    if (fallbackPerDay === undefined) {
+      const recentLearn = merged.slice(-14); // 導入初日など materialHistory が無いときのみ（合算・過大注意）
+      fallbackPerDay = recentLearn.length ? recentLearn.reduce((a, p) => a + p.amount, 0) / recentLearn.length : undefined;
+    }
 
     // 曜日別ペース: 少数サンプルの曜日は全体平均へ縮小（ベイズ平均 C=3）。外れ日1つで暴れない。
     const wdSum = [0, 0, 0, 0, 0, 0, 0];
@@ -508,8 +522,10 @@ async function renderPredictTab(
     const overallDaily = merged.length ? allSum / merged.length : 1;
     const weekdayWeights = wdSum.map((s, i) => bayesianAverage(s, wdCnt[i], overallDaily, 3));
 
+    // 日次サンプルは必修の教材消化(passed_materials)の差分を優先（非必修を含む学習数は使わない）。
+    // materialHistory が2点以上あればそれで組み、無いときだけ learning_amounts(合算)に退避。
     let dailySamples: { weekday: number; value: number }[];
-    if (mh.series.length >= 5) {
+    if (mh.series.length >= 2) {
       dailySamples = [];
       for (let i = 1; i < mh.series.length; i++) {
         const prev = mh.series[i - 1];
@@ -541,18 +557,20 @@ async function renderPredictTab(
       dailySamples,
     });
 
-    let rem = total - passed;
-    const recent14 = merged.slice(-14);
-    const actualCurve: { date: string; remaining: number }[] = [];
-    for (let i = recent14.length - 1; i >= 0; i--) {
-      actualCurve.unshift({ date: recent14[i].date, remaining: rem });
-      rem += recent14[i].amount ?? 0;
-    }
+    // 実績カーブは必修の教材消化(passed_materials)から直接再構成する。
+    // learning_amounts(学習数)は非必修も含むため使わない：非必修を多くやった日に
+    // 必修の残りが過剰に減って見える（＝過去の実績を過大表示する）のを防ぐ。
+    // 各日の total はロールオーバー時に変化しうるので、その日の total があれば優先。
+    const recentMat = mh.series.slice(-14);
+    const actualCurve: { date: string; remaining: number }[] =
+      recentMat.length >= 2
+        ? recentMat.map((p) => ({ date: p.date, remaining: Math.max(0, (p.total ?? total) - p.passed) }))
+        : [{ date: isoDate(zenToday()), remaining: total - passed }];
     const savedTarget = await getTargetDate();
     const electivesNote =
       report.takingCourseCount > report.requiredCourseCount
-        ? `※「学習数」（累計・日別）は非必修コースも含みます（履修${report.takingCourseCount} / 必修${report.requiredCourseCount}）。そのぶんペース推定は高めに出ることがあります。必修の進捗は「残教材」で判定しています。`
-        : `※「学習数」（累計・日別）は全コースの合計です。必修の進捗は「残教材」で判定しています。`;
+        ? `※実績・完了見込みグラフとペースは必修の教材消化（残教材＝passed_materials）のみで算出しています（非必修の学習は含めません）。「学習数」（累計・日別・推移タブ）は非必修も含む全学習の合計です（履修${report.takingCourseCount} / 必修${report.requiredCourseCount}）。`
+        : `※実績・完了見込みグラフとペースは必修の教材消化（残教材）で算出。「学習数」（累計・日別・推移タブ）は全コースの合計です。`;
     // デイリー達成は「教材消化の実差分」で判定（非必修も含む学習数ではなく、完了教材数）。
     // 当日始点(ensureDayStart で記録)からの増分＝今日完了した教材数。始点が今日でなければ0。
     // 日次スナップショットが今日既に走っていて始点未記録なケースを、カード表示時にも補完（現在値=始点）。
