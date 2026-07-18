@@ -55,13 +55,16 @@ export function weekdayTendency(series: Series): Section {
     });
   }
   // 有意性: 曜日差が統計的に本物かノイズか（Kruskal-Wallis）。小標本の過信を防ぐ。
+  // 「有意差なし」と「データ不足で判定不能」は別物として明示する（p大 ≠ 差がない証明）。
   const kw = kruskalWallis(byWd);
   if (kw.k >= 3 && kw.n >= 14) {
     insights.push(
       kw.p < 0.05
         ? { kind: 'note', text: `※曜日差は統計的に有意（${fmtP(kw.p)}・${effLabel(kw.eta2)}）。傾向として信頼できます。` }
-        : { kind: 'note', text: `※現時点では曜日差は誤差の範囲（${fmtP(kw.p)}）。日数が増えると精度が上がります。` }
+        : { kind: 'note', text: `※現在のデータでは曜日差は確認できません（${fmtP(kw.p)}）。「差がない」証明ではなく、差があっても今の記録量では検出できない可能性があります。` }
     );
+  } else {
+    insights.push({ kind: 'note', text: `※曜日差の統計判定はまだできません（判定不能）。理由: 記録日数の不足（現在 ${kw.n}日・3曜日以上×計14日〜で判定を開始）。上の平均値は参考程度に。` });
   }
   return { title: '曜日のリズム', insights };
 }
@@ -152,7 +155,7 @@ export function trendTendency(series: Series): Section {
   } else if (mk.trend === 'down') {
     insights.push({ kind: 'warn', text: `下降トレンド（週あたり約 ${r1(perWeek)}件で減少・統計的に有意）。ペースを立て直しましょう。` });
   } else {
-    insights.push({ kind: 'note', text: `明確な増減トレンドは無く、ほぼ横ばいです（週あたり ${perWeek >= 0 ? '+' : ''}${r1(perWeek)}件）。` });
+    insights.push({ kind: 'note', text: `統計的に検出できる増減トレンドはありません（週あたり ${perWeek >= 0 ? '+' : ''}${r1(perWeek)}件）。※「横ばいの証明」ではなく、記録が増えると判定が変わることがあります。` });
   }
   // 週モメンタム: 直近7日 vs その前3週
   const last7 = vals.slice(-7);

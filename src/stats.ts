@@ -26,15 +26,20 @@ export function quantile(xs: number[], q: number): number {
 export const median = (xs: number[]): number => quantile(xs, 0.5);
 
 // --- 正規/カイ二乗の裾確率（有意性判定用の近似） ---
-/** 標準正規の上側確率 P(Z>z)。Φ(z)=0.5(1+erf(z/√2))・erf は Abramowitz-Stegun 7.1.26 近似。 */
+/** 標準正規の上側確率 P(Z>z)。Φ(z)=0.5(1+erf(z/√2))・erf は Abramowitz-Stegun 7.1.26 近似。
+ *  実装方針: |z| で片側 sf を求め、最後に符号で反転する（erf の奇関数性を暗黙に使う書き方は
+ *  正しくても壊れやすいため排除）。恒等式 normSf(z)+normSf(-z)=1 をテストで固定。 */
 export function normSf(z: number): number {
-  const x = Math.abs(z) / Math.SQRT2; // ← erf の引数は z/√2（スケール必須）
+  const az = Math.abs(z);
+  const x = az / Math.SQRT2; // erf の引数は |z|/√2（スケール必須）
   const t = 1 / (1 + 0.3275911 * x);
-  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
-  const cdf = 0.5 * (1 + (z < 0 ? -y : y));
-  return 1 - cdf;
+  const erfAbs = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  const sfAbs = 0.5 * (1 - erfAbs); // P(Z > |z|) ∈ [0, 0.5]
+  const sf = z >= 0 ? sfAbs : 1 - sfAbs;
+  return Math.min(1, Math.max(0, sf)); // 近似誤差(〜1.5e-7)の範囲外れを防ぐ
 }
-/** カイ二乗の上側確率 P(χ²_df > x)。Wilson-Hilferty 正規近似。 */
+/** カイ二乗の上側確率 P(χ²_df > x)。Wilson-Hilferty 正規近似。
+ *  x が小さいと z は負になるが、normSf は負の z で正しく 1 に近づく（x→0 で p→1・単調減少をテストで固定）。 */
 export function chiSqSf(x: number, df: number): number {
   if (df <= 0) return 1;
   if (x <= 0) return 1;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mean, stdev, quantile, median, linreg, mannKendall, kruskalWallis, lag1Autocorr, burstiness, paretoShare, normSf, chiSqSf } from '../src/stats';
+import { mean, variance, stdev, quantile, median, linreg, mannKendall, kruskalWallis, lag1Autocorr, burstiness, paretoShare, normSf, chiSqSf } from '../src/stats';
 
 describe('基本統計', () => {
   it('mean/stdev/median/quantile', () => {
@@ -85,5 +85,86 @@ describe('習慣指標', () => {
   it('paretoShare: 均等なら上位20%≈20%', () => {
     expect(paretoShare(new Array(10).fill(7), 0.2)).toBeCloseTo(0.2, 5);
     expect(paretoShare([100, 0, 0, 0, 0], 0.2)).toBe(1); // 1日に全集中
+  });
+});
+
+// --- エッジケース網羅（空・要素1〜4・定数列・大量タイ・0多数）。数値がそれっぽく見えるバグの防波堤 ---
+describe('エッジケース', () => {
+  it('空配列・要素1で例外/NaNを出さない', () => {
+    expect(mean([])).toBe(0);
+    expect(variance([1])).toBe(0);
+    expect(stdev([])).toBe(0);
+    expect(quantile([], 0.5)).toBe(0);
+    expect(median([])).toBe(0);
+    expect(paretoShare([])).toBe(0);
+    expect(lag1Autocorr([1, 2, 3])).toBe(0); // n<4
+    expect(burstiness([5, 5])).toBeNull(); // n<3
+    expect(linreg([]).slope).toBe(0);
+  });
+  it('定数列: 分散0系で発散しない', () => {
+    expect(variance([4, 4, 4, 4])).toBe(0);
+    expect(lag1Autocorr([4, 4, 4, 4, 4])).toBe(0); // den=0 → 0
+    expect(linreg([4, 4, 4, 4]).slope).toBe(0);
+    expect(linreg([4, 4, 4, 4]).r2).toBe(0);
+    const mk = mannKendall([4, 4, 4, 4, 4, 4, 4]);
+    expect(mk.p).toBeCloseTo(1, 6); // erf近似誤差(〜1e-9)を許容
+    expect(mk.trend).toBe('flat');
+  });
+  it('0が大量: burstiness(全0)=null・paretoShare(全0)=0', () => {
+    expect(burstiness([0, 0, 0, 0])).toBeNull(); // μ+σ=0
+    expect(paretoShare([0, 0, 0, 0, 0])).toBe(0);
+    expect(quantile([0, 0, 0, 5], 0.5)).toBe(0);
+  });
+  it('大量タイ: mannKendall はタイ補正で妥当な判定を保つ', () => {
+    const r = mannKendall([1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3]); // 強い上昇＋大量タイ
+    expect(r.trend).toBe('up');
+    expect(r.p).toBeLessThan(0.05);
+    expect(r.tau).toBeGreaterThan(0);
+  });
+  it('kruskalWallis: 全群同値（タイ補正C=0）でも NaN にならない', () => {
+    const r = kruskalWallis([[3, 3, 3], [3, 3, 3], [3, 3]]);
+    expect(Number.isFinite(r.H)).toBe(true);
+    expect(r.p).toBeGreaterThan(0.9);
+  });
+  it('kruskalWallis: 0多数＋要素数バラバラ', () => {
+    const r = kruskalWallis([[0, 0, 0, 1], [0, 0], [0, 2, 0]]);
+    expect(Number.isFinite(r.p)).toBe(true);
+    expect(r.p).toBeGreaterThanOrEqual(0);
+    expect(r.p).toBeLessThanOrEqual(1);
+  });
+});
+
+// --- 近似式のプロパティ（構造リファクタの回帰防止） ---
+describe('normSf/chiSqSf プロパティ', () => {
+  it('恒等式 normSf(z) + normSf(-z) = 1（負側は反転で計算）', () => {
+    for (const z of [0, 0.1, 0.5, 1, 1.64, 1.96, 2.5, 3.5, 6]) {
+      expect(normSf(z) + normSf(-z)).toBeCloseTo(1, 6);
+    }
+  });
+  it('normSf: 単調減少・値域[0,1]・既知値 z=3', () => {
+    let prev = 1.1;
+    for (let z = -5; z <= 5; z += 0.25) {
+      const p = normSf(z);
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThanOrEqual(1);
+      expect(p).toBeLessThanOrEqual(prev + 1e-12);
+      prev = p;
+    }
+    expect(normSf(3)).toBeCloseTo(0.00135, 4);
+  });
+  it('chiSqSf: x→0 で p→1（負のz経路）・x について単調減少', () => {
+    expect(chiSqSf(0.001, 6)).toBeGreaterThan(0.999);
+    for (const df of [1, 3, 6, 10]) {
+      let prev = 1.1;
+      for (let x = 0.01; x < 30; x += 0.5) {
+        const p = chiSqSf(x, df);
+        expect(p).toBeGreaterThanOrEqual(0);
+        expect(p).toBeLessThanOrEqual(1);
+        expect(p).toBeLessThanOrEqual(prev + 1e-9);
+        prev = p;
+      }
+    }
+    expect(chiSqSf(12.59, 6)).toBeGreaterThan(0.03); // 既知値 p≈0.05（W-H近似の範囲で）
+    expect(chiSqSf(12.59, 6)).toBeLessThan(0.07);
   });
 });
