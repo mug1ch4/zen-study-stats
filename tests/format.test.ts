@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { zenTodayISO, zenMondayISO, parseDate, isoLocal, durationStr, shortDate } from '../src/format';
+import { zenTodayISO, zenWeekStartISO, parseDate, isoLocal, durationStr, shortDate } from '../src/format';
 
 describe('5:00 AM JST 日境界', () => {
   it('JST 4:59 はまだ前日・5:00 で切替', () => {
@@ -14,16 +14,16 @@ describe('5:00 AM JST 日境界', () => {
   });
 });
 
-describe('zenMondayISO（週境界）', () => {
-  it('水曜 → その週の月曜', () => {
+describe('zenWeekStartISO（週境界・日曜はじまり）', () => {
+  it('水曜 → その週の日曜', () => {
     // 2026-07-15 は水曜。JST正午のエポック。
     const wed = Date.UTC(2026, 6, 15, 3, 0); // JST 12:00
-    expect(zenMondayISO(wed)).toBe('2026-07-13');
+    expect(zenWeekStartISO(wed)).toBe('2026-07-12');
   });
-  it('月曜 4:59 は前週の月曜（5:00境界）', () => {
-    // 2026-07-13(月) JST 04:59 → 学習上はまだ 07-12(日) → 週は 07-06(月)
-    expect(zenMondayISO(Date.UTC(2026, 6, 12, 19, 59))).toBe('2026-07-06');
-    expect(zenMondayISO(Date.UTC(2026, 6, 12, 20, 0))).toBe('2026-07-13');
+  it('日曜 4:59 は前週（5:00境界）', () => {
+    // 2026-07-12(日) JST 04:59 → 学習上はまだ 07-11(土) → 週は 07-05(日)
+    expect(zenWeekStartISO(Date.UTC(2026, 6, 11, 19, 59))).toBe('2026-07-05');
+    expect(zenWeekStartISO(Date.UTC(2026, 6, 11, 20, 0))).toBe('2026-07-12');
   });
 });
 

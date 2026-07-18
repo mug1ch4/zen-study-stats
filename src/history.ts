@@ -4,7 +4,7 @@
 // 学習数APIは「直近14日」しか返さないため、サイトを開いた日に1回スナップショットして
 // 14日窓をマージ蓄積する。14日以内に一度でも開けば穴は空かない。
 import type { DailyAmount } from './api';
-import { zenTodayISO, zenMondayISO } from './format';
+import { zenTodayISO, zenWeekStartISO } from './format';
 
 const KEY_HISTORY = 'zss:history'; // { "YYYY-MM-DD": number } 学習数
 const KEY_REPORTHIST = 'zss:reportHist'; // { "YYYY-MM-DD": number } 完了レポート累計
@@ -180,7 +180,7 @@ export async function ensureDayStart(currentPassed: number): Promise<void> {
 }
 
 // --- 週の始点・週間目標（週目標バー/週次レビュー用） ---
-const KEY_WEEKSTART = 'zss:weekStart'; // { week: 月曜"YYYY-MM-DD", passed: number }
+const KEY_WEEKSTART = 'zss:weekStart'; // { week: 週開始(日曜)"YYYY-MM-DD", passed: number }
 const KEY_WEEKGOAL = 'zss:weekGoal'; // number（教材/週）
 
 export interface WeekStart { week: string; passed: number }
@@ -194,15 +194,40 @@ export async function getWeekStart(): Promise<WeekStart | null> {
     return null;
   }
 }
-/** 新しい週（月曜・5:00境界）になったら週始点を記録。rolled=切替が起きたか、prev=前週の始点。 */
-export async function ensureWeekStart(currentPassed: number): Promise<{ rolled: boolean; prev: WeekStart | null }> {
+/** 指定日より前の最後のスナップ値（週始点の復元用・純関数）。 */
+export function pickBaselineBefore(series: { date: string; passed: number }[], beforeISO: string): number | null {
+  let last: number | null = null;
+  for (const p of series) {
+    if (p.date < beforeISO) last = p.passed;
+    else break;
+  }
+  return last;
+}
+
+/** 日次スナップから「今週の開始（日曜5:00）時点の passed」を復元。スナップが無ければ null。 */
+export async function weekBaselinePassed(): Promise<number | null> {
+  const { series } = await getMaterialHistory();
+  return pickBaselineBefore(series, zenWeekStartISO());
+}
+
+/** 新しい週（日曜・5:00境界）になったら週始点を記録。rolled=切替が起きたか、prev=前週の始点。
+ *  weekBaseline: 日次スナップから復元した「週開始時点の passed」。週の途中で始点が設置されると
+ *  週初〜前日の消化分が週目標から漏れるため、復元値が小さければ始点を下方修復する
+ *  （小さい方のみ採用＝過大計上はしない。学年ロールオーバーで passed が減った場合も current 側に収束）。
+ *  rolled は cur.week < week（真に前の週から切替）のみ true — 週開始曜日の変更などで
+ *  保存キーが今週内の別日になっている場合は、誤った「先週のまとめ」を出さず黙って移行する。 */
+export async function ensureWeekStart(currentPassed: number, weekBaseline: number | null = null): Promise<{ rolled: boolean; prev: WeekStart | null }> {
   if (memOverride) return { rolled: false, prev: null };
   try {
-    const week = zenMondayISO();
+    const week = zenWeekStartISO();
+    const base = Math.min(currentPassed, weekBaseline ?? currentPassed);
     const cur = await getWeekStart();
     if (!cur || cur.week !== week) {
-      await chrome.storage.local.set({ [KEY_WEEKSTART]: { week, passed: currentPassed } });
-      return { rolled: !!cur, prev: cur }; // 初回設置(cur=null)はレビュー対象外
+      await chrome.storage.local.set({ [KEY_WEEKSTART]: { week, passed: base } });
+      return { rolled: !!cur && cur.week < week, prev: cur }; // 初回設置(cur=null)はレビュー対象外
+    }
+    if (base < cur.passed) {
+      await chrome.storage.local.set({ [KEY_WEEKSTART]: { week, passed: base } });
     }
     return { rolled: false, prev: null };
   } catch {
@@ -223,6 +248,30 @@ export async function setWeekGoal(n: number): Promise<void> {
   if (memOverride) return;
   try {
     await chrome.storage.local.set({ [KEY_WEEKGOAL]: n });
+  } catch {
+    /* ignore */
+  }
+}
+
+// --- 締切アウトカム（締切遵守率の源）。締切前に観測できた月だけを記録し、またいだ時点で凍結 ---
+import { updateDeadlineOutcomes, type DeadlineOutcomes, type MonthDeadline } from './deadlines';
+const KEY_DLOUT = 'zss:deadlineOutcomes';
+export async function getDeadlineOutcomes(): Promise<DeadlineOutcomes> {
+  if (memOverride) return {};
+  try {
+    const r = await chrome.storage.local.get([KEY_DLOUT]);
+    return (r?.[KEY_DLOUT] as DeadlineOutcomes) ?? {};
+  } catch {
+    return {};
+  }
+}
+/** 月次サマリ取得のたびに呼ぶ（締切前の値の更新／締切またぎの凍結）。変化が無ければ書き込まない。 */
+export async function recordDeadlineOutcomes(months: MonthDeadline[]): Promise<void> {
+  if (memOverride || !months.length) return;
+  try {
+    const cur = await getDeadlineOutcomes();
+    const { next, changed } = updateDeadlineOutcomes(cur, months, Date.now());
+    if (changed) await chrome.storage.local.set({ [KEY_DLOUT]: next });
   } catch {
     /* ignore */
   }

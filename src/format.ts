@@ -33,10 +33,10 @@ export function zenToday(nowMs: number = Date.now()): Date {
   return parseDate(zenTodayISO(nowMs));
 }
 
-/** 「学習上の今週」の月曜 "YYYY-MM-DD"（週目標・週次レビューの週キー）。 */
-export function zenMondayISO(nowMs: number = Date.now()): string {
+/** 「学習上の今週」の開始日=日曜 "YYYY-MM-DD"（週目標・週次レビューの週キー。本家の週表示に合わせ日曜はじまり・5:00境界）。 */
+export function zenWeekStartISO(nowMs: number = Date.now()): string {
   const d = parseDate(zenTodayISO(nowMs));
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Mon=0
+  d.setDate(d.getDate() - d.getDay()); // Sun=0
   return isoLocal(d);
 }
 

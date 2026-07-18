@@ -64,17 +64,53 @@ export function reportDeadlineStatus(months: MonthDeadline[], nowMs: number): De
   return { priority, upcoming, next, overdue, upcomingRemaining, allClear: overdue.length === 0 && upcomingWithWork.length === 0 };
 }
 
+// --- 締切アウトカム（遵守率の唯一の正しい源） ---
+// 「拡張が有効な状態で締切をまたいだ月」だけを評価するための記録。
+// 締切前に観測できた月の (passed,total) を更新し続け、締切を過ぎた時点の値で凍結する。
+// 導入前・転入前に既に過ぎていた締切は記録が無い＝自動的に対象外（後から完了しても遡って met にならない）。
+export interface DeadlineOutcome {
+  deadline: string; // ISO
+  total: number;
+  passed: number; // 締切前の最終観測値（凍結後は不変）
+  frozen?: boolean; // 締切をまたいで確定済み
+}
+export type DeadlineOutcomes = Record<string, DeadlineOutcome>; // key: "YYYY-M"
+
+/** 月次サマリからアウトカムを更新（純関数）。凍結済みは触らない。初見で既に締切超過の月は記録しない。 */
+export function updateDeadlineOutcomes(cur: DeadlineOutcomes, months: MonthDeadline[], nowMs: number): { next: DeadlineOutcomes; changed: boolean } {
+  const next: DeadlineOutcomes = { ...cur };
+  let changed = false;
+  for (const m of months) {
+    const d = new Date(m.deadline);
+    if (isNaN(d.getTime()) || m.total <= 0) continue;
+    const key = `${m.year}-${m.month}`;
+    const prev = next[key];
+    if (prev?.frozen) continue; // 確定済み
+    if (d.getTime() > nowMs) {
+      // 締切前: 最新値で更新（観測の証跡）
+      if (!prev || prev.passed !== m.passed || prev.total !== m.total) {
+        next[key] = { deadline: m.deadline, total: m.total, passed: m.passed };
+        changed = true;
+      }
+    } else if (prev) {
+      // 締切をまたいだ: 締切前の最終観測値で凍結（またいだ後の進捗は含めない）
+      next[key] = { ...prev, frozen: true };
+      changed = true;
+    }
+    // prev が無く締切も過ぎている＝観測できていない月 → 対象外（何も記録しない）
+  }
+  return { next, changed };
+}
+
 export interface DeadlineAdherence {
-  pastTotal: number; // 締切を過ぎた月の数
+  pastTotal: number; // 観測下で締切をまたいだ月の数
   pastMet: number; // うち期限内に全章完了できた数
   rate: number; // 遵守率（0〜1）
 }
 
-/** 過去の締切のうち、期限までに全章完了できた割合（＝締切遵守率・分析の主眼）。 */
-export function deadlineAdherence(months: MonthDeadline[], nowMs: number): DeadlineAdherence {
-  const past = months
-    .map((m) => ({ d: new Date(m.deadline), met: m.passed >= m.total && m.total > 0 }))
-    .filter((m) => !isNaN(m.d.getTime()) && m.d.getTime() < nowMs);
-  const pastMet = past.filter((m) => m.met).length;
+/** 締切遵守率: 凍結済みアウトカム（＝拡張が観測していた締切）だけで算出。 */
+export function deadlineAdherence(outcomes: DeadlineOutcomes): DeadlineAdherence {
+  const past = Object.values(outcomes).filter((o) => o.frozen);
+  const pastMet = past.filter((o) => o.passed >= o.total && o.total > 0).length;
   return { pastTotal: past.length, pastMet, rate: past.length ? pastMet / past.length : 0 };
 }

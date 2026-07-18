@@ -4,12 +4,12 @@ import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } fro
 import { fetchMaterialTotals, fetchCourseMaterials, fetchSectionQuestions } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, initDarkModeFrame, preInitDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
-import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, snapshotCoursePassed, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, getSeries, recordWorkTime } from './history';
+import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, snapshotCoursePassed, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, weekBaselinePassed, getSeries, recordWorkTime, recordDeadlineOutcomes } from './history';
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureMyCourseUndone } from './myCourseInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
 import { notifyRolloverSoon, notifyProgress, notifyWeekReview } from './notify';
-import { zenMondayISO, parseDate, weekdayLabel } from './format';
+import { zenWeekStartISO, parseDate, weekdayLabel } from './format';
 import { showToast } from './ui/toast';
 
 // 【DEV】完了検知の動作確認用トースト。切り分け（observer発火/確定判定）を可視化する。
@@ -232,6 +232,7 @@ function startup(): void {
     try {
       const rp = await fetchReportProgresses();
       await snapshotReports(rp.passedReports);
+      await recordDeadlineOutcomes(rp.months); // 締切前の観測値を更新・締切またぎで凍結（遵守率の源）
     } catch {
       /* レポート取得失敗は学習数蓄積を妨げない */
     }
@@ -248,22 +249,23 @@ function startup(): void {
         await setLastPassed(mt.passed);
       }
       await ensureDayStart(mt.passed); // 新しい学習日の始点passedを記録（デイリー目標の当日完了数算出用）
-      // 週の始点。週が切り替わったら「先週のまとめ」を1回だけ通知（Fresh Start）
-      const ws = await ensureWeekStart(mt.passed);
+      // 週の始点（日曜5:00境界・スナップから週初時点を復元して途中設置を修復）。
+      // 週が切り替わったら「先週のまとめ」を1回だけ通知（Fresh Start）
+      const ws = await ensureWeekStart(mt.passed, await weekBaselinePassed());
       if (ws.rolled && ws.prev) {
         const weekMat = Math.max(0, mt.passed - ws.prev.passed);
         const series = await getSeries();
-        const monday = zenMondayISO();
-        const mondayT = parseDate(monday).getTime();
+        const weekStart = zenWeekStartISO();
+        const weekStartT = parseDate(weekStart).getTime();
         const lastWeek = series.filter((p) => {
           const t = parseDate(p.date).getTime();
-          return t < mondayT && t >= mondayT - 7 * 86400000;
+          return t < weekStartT && t >= weekStartT - 7 * 86400000;
         });
         const sum = lastWeek.reduce((a, p) => a + p.amount, 0);
         const best = lastWeek.reduce<{ date: string; amount: number } | null>((a, p) => (!a || p.amount > a.amount ? p : a), null);
         const bits = [`教材 ${weekMat}`, `学習数 ${sum}件`];
         if (best && best.amount > 0) bits.push(`ベストは${weekdayLabel(best.date)}曜 ${best.amount}件`);
-        void notifyWeekReview(monday, `先週のまとめ: ${bits.join('・')}。今週も仕切り直していきましょう。`);
+        void notifyWeekReview(weekStart, `先週のまとめ: ${bits.join('・')}。今週も仕切り直していきましょう。`);
       }
     } catch {
       /* 教材取得失敗も他を妨げない */

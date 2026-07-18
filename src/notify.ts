@@ -7,7 +7,7 @@ interface NotifyState {
   milestone: number; // 直近に通知した全体%のしきい値
   questDate: string; // デイリー達成を通知した日
   rolloverDate: string; // 日付更新間近を通知した日
-  weekReview?: string; // 週次レビューを通知した週（月曜ISO）
+  weekReview?: string; // 週次レビューを通知した週（週開始=日曜ISO）
 }
 const MILESTONES = [10, 25, 50, 75, 90, 100];
 

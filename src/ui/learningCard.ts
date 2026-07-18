@@ -5,14 +5,14 @@ import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
-import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements, getWorkTimes, getIncludeSupp, setIncludeSupp, getCoursePassedHistory } from '../history';
+import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, weekBaselinePassed, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements, getWorkTimes, getIncludeSupp, setIncludeSupp, getCoursePassedHistory, recordDeadlineOutcomes, getDeadlineOutcomes } from '../history';
 import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
 import { evaluateCalibration } from '../calibration';
 import { reportDeadlineStatus, type DeadlineStatus } from '../deadlines';
 import { computeCourseDeadlineRisks, type CourseDeadlineRisk } from '../deadlineRisk';
 import { computeCoursePaces } from '../coursePace';
 import { fetchMonthlyReport } from '../api';
-import { zenMondayISO } from '../format';
+import { zenWeekStartISO } from '../format';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, deadlineTendency, coursePaceTendency, type Section } from '../analysis';
 import { buildPlanIcs, downloadText } from '../ics';
 import { getNearDoneChapters } from '../courseApi';
@@ -323,6 +323,7 @@ async function renderPredictTab(
   try {
     const series = await getSeriesOnce();
     const report = await fetchReportProgresses();
+    void recordDeadlineOutcomes(report.months); // 締切前の観測値を更新（完了直後の再描画でも新鮮に保つ）
     const courses = await getCourses();
     const total = courses.reduce((a, c) => a + c.total, 0);
     const passed = courses.reduce((a, c) => a + c.passed, 0);
@@ -403,16 +404,17 @@ async function renderPredictTab(
     const ds = await getDayStart();
     const todayDone = ds && ds.date === isoDate(zenToday()) ? Math.max(0, passed - ds.passed) : 0;
 
-    // 週間目標: 週始点(月曜5:00境界)からの教材差分。始点未記録ならカード表示時に補完。
-    await ensureWeekStart(passed);
+    // 週間目標: 週始点(日曜5:00境界)からの教材差分。始点未記録ならカード表示時に補完。
+    // 週の途中で始点が設置された場合は、日次スナップから週初時点の passed を復元して修復。
+    await ensureWeekStart(passed, await weekBaselinePassed());
     const ws = await getWeekStart();
-    const weekDone = ws && ws.week === zenMondayISO() ? Math.max(0, passed - ws.passed) : 0;
+    const weekDone = ws && ws.week === zenWeekStartISO() ? Math.max(0, passed - ws.passed) : 0;
     const weekGoal = await getWeekGoal();
-    // 先週のまとめ（学習数ベース・月曜〜日曜）
-    const mondayT = new Date(zenMondayISO() + 'T12:00:00').getTime();
+    // 先週のまとめ（学習数ベース・日曜〜土曜）
+    const weekStartT = new Date(zenWeekStartISO() + 'T12:00:00').getTime();
     const lastWeek = merged.filter((p) => {
       const t = new Date(p.date + 'T12:00:00').getTime();
-      return t < mondayT && t >= mondayT - 7 * 86400000;
+      return t < weekStartT && t >= weekStartT - 7 * 86400000;
     });
     const lastWeekSum = lastWeek.reduce((a, p) => a + p.amount, 0);
     const weekEl = renderWeekGoal(pred, weekDone, weekGoal, lastWeek.length ? lastWeekSum : null);
@@ -537,6 +539,8 @@ async function renderAnalysisTab(
   try {
     const series = await getSeriesOnce();
     const [courses, report, hour, workTimes, coursePassedHist] = await Promise.all([getCourses(), fetchReportProgresses(), getHourStats(), getWorkTimes(), getCoursePassedHistory()]);
+    await recordDeadlineOutcomes(report.months); // 締切前の観測値を更新（遵守率の源・またぎで凍結）
+    const deadlineOutcomes = await getDeadlineOutcomes();
     // 14日窓シードとマージ（新規でも分析可）
     const dayMap = new Map<string, number>();
     for (const p of series) dayMap.set(p.date, p.amount);
@@ -561,7 +565,7 @@ async function renderAnalysisTab(
 
     const sections: Section[] = [
       journeySummary(merged, passedMat0, totalMat0, streak0.longest, unlocked0.size, ACHIEVEMENTS.length),
-      deadlineTendency(report),
+      deadlineTendency(report, deadlineOutcomes),
       requiredAdvice(courses, report, recentPerDay),
       trendTendency(merged),
       distributionSummary(merged),
@@ -783,7 +787,7 @@ function renderWeekGoal(pred: Prediction, weekDone: number, savedGoal: number | 
     count.append(h('b', {}, [String(weekDone)]), ` / ${goal} 教材`, h('span', { class: 'zss-quest-left' }, [met ? '　週目標 達成' : `　あと ${left}`]));
     note.textContent = met
       ? '今週の目標を達成しました。上積みはそのまま貯金になります。'
-      : `月曜5:00はじまりの週間目標です（義務ペース 週${minWeek} 以上で設定可）。${lastWeekSum !== null ? `先週の学習数: ${lastWeekSum}件。` : ''}`;
+      : `日曜5:00はじまりの週間目標です（義務ペース 週${minWeek} 以上で設定可）。${lastWeekSum !== null ? `先週の学習数: ${lastWeekSum}件。` : ''}`;
   };
   const onInput = (): void => {
     const n = Math.floor(Number(input.value));

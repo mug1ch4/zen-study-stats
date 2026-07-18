@@ -3,7 +3,7 @@
 // すべて自前蓄積＋GET取得済みデータのみを使用（read-only・第一原則）。
 import { isHoliday } from './holidays';
 import { parseDate } from './format';
-import { reportDeadlineStatus, deadlineAdherence } from './deadlines';
+import { reportDeadlineStatus, deadlineAdherence, type DeadlineOutcomes } from './deadlines';
 import { computeCoursePaces, courseEtaDays } from './coursePace';
 import type { CoursePassedHistory } from './history';
 import type { CourseMaterial } from './courseApi';
@@ -318,20 +318,23 @@ export function coursePaceTendency(history: CoursePassedHistory, courses: Course
   return { title: '教科別ペース', insights };
 }
 
-/** レポート締切の状況: 締切遵守率（過去）＋締切超過＋次の締切。月次締切ベースの分析。 */
-export function deadlineTendency(report: ReportProgress): Section {
+/** レポート締切の状況: 締切遵守率（観測下でまたいだ締切のみ）＋締切超過＋次の締切。月次締切ベースの分析。 */
+export function deadlineTendency(report: ReportProgress, outcomes: DeadlineOutcomes): Section {
   const months = report.months.map((m) => ({ year: m.year, month: m.month, deadline: m.deadline, total: m.total, passed: m.passed }));
   const st = reportDeadlineStatus(months, Date.now());
-  const adh = deadlineAdherence(months, Date.now());
+  const adh = deadlineAdherence(outcomes);
   const insights: Insight[] = [];
 
-  // 遵守率（分析の主眼）: 過去の締切をどれだけ期限内に守れたか
-  if (adh.pastTotal >= 2) {
+  // 遵守率（分析の主眼）: 「この拡張が観測している間にまたいだ締切」をどれだけ期限内に守れたか。
+  // 導入前・転入前に既に過ぎていた締切は対象外（守りようがなかった締切で0%と断じない）。
+  if (adh.pastTotal >= 1) {
     const p = Math.round(adh.rate * 100);
     insights.push({
-      kind: p >= 90 ? 'good' : p >= 60 ? 'note' : 'warn',
-      text: `締切遵守率 ${p}%（過去${adh.pastTotal}回の締切のうち期限内に完了 ${adh.pastMet}回）。${p >= 90 ? '安定して守れています。' : p < 60 ? '締切に間に合わない月が目立ちます。前倒しを。' : ''}`,
+      kind: p >= 90 ? 'good' : p >= 60 || adh.pastTotal < 2 ? 'note' : 'warn',
+      text: `締切遵守率 ${p}%（記録開始後にまたいだ締切 ${adh.pastTotal}回のうち期限内に完了 ${adh.pastMet}回）。${p >= 90 ? '安定して守れています。' : adh.pastTotal >= 2 && p < 60 ? '締切に間に合わない月が目立ちます。前倒しを。' : ''}`,
     });
+  } else {
+    insights.push({ kind: 'note', text: '締切遵守率は、記録開始後に締切をまたいだ月から算出します（導入前に過ぎていた締切は対象外・まだ対象の締切なし）。' });
   }
   // 締切超過（成績に影響）
   if (st.overdue.length) {

@@ -24,7 +24,7 @@ const SKIP_KEYS = new Set([
   'zss:notify',
 ]);
 // 日付→数値の履歴系（インポート時に統合する）
-const HIST_KEYS = new Set(['zss:history', 'zss:reportHist', 'zss:materialHist', 'zss:materialTotalHist', 'zss:coursePassedHist']);
+const HIST_KEYS = new Set(['zss:history', 'zss:reportHist', 'zss:materialHist', 'zss:materialTotalHist', 'zss:coursePassedHist', 'zss:deadlineOutcomes']);
 // 時間帯の学習記録（24時間バケットの加算カウンタ）。復元先が空＝そのまま、既存あり＝合算で統合。
 const HOUR_KEY = 'zss:hourStats';
 

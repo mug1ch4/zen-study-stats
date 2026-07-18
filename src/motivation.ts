@@ -76,11 +76,11 @@ export function motivationNudges(ctx: MotivationCtx): Nudge[] {
     out.push({ kind: 'streak', text: `連続${ctx.streak.current}日、いい調子です。今日も記録更新中。` });
   }
 
-  // 2) Fresh Start（時間的節目）— 月曜/月初は仕切り直しに最適
+  // 2) Fresh Start（時間的節目）— 週初(日曜)/月初は仕切り直しに最適
   const d = ctx.today;
   if (d.getDate() === 1) {
     out.push({ kind: 'landmark', text: `今日から新しい月。先月までは一区切り、ここから仕切り直して今月の目標を決めましょう（予測タブで設定できます）。` });
-  } else if (d.getDay() === 1) {
+  } else if (d.getDay() === 0) {
     out.push({ kind: 'landmark', text: `新しい週の始まり。今週の"やる量"を決めると弾みがつきます（週初めは続けやすい時期です）。` });
   }
 
