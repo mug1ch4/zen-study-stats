@@ -204,10 +204,20 @@ export function pickBaselineBefore(series: { date: string; passed: number }[], b
   return last;
 }
 
-/** 日次スナップから「今週の開始（日曜5:00）時点の passed」を復元。スナップが無ければ null。 */
+/** 週始点の復元（純関数）: 週開始より前の最後のスナップ。
+ *  無ければ（記録開始が今週・週境界仕様の変更直後など）今週最初のスナップ
+ *  （＝その日の初回オープン時点の passed）へフォールバック。それも無ければ null。 */
+export function pickWeekBaseline(series: { date: string; passed: number }[], weekStartISO: string): number | null {
+  const before = pickBaselineBefore(series, weekStartISO);
+  if (before !== null) return before;
+  const firstInWeek = series.find((p) => p.date >= weekStartISO);
+  return firstInWeek ? firstInWeek.passed : null;
+}
+
+/** 日次スナップから「今週の開始(日曜5:00)時点の passed」を復元。スナップが無ければ null。 */
 export async function weekBaselinePassed(): Promise<number | null> {
   const { series } = await getMaterialHistory();
-  return pickBaselineBefore(series, zenWeekStartISO());
+  return pickWeekBaseline(series, zenWeekStartISO());
 }
 
 /** 新しい週（日曜・5:00境界）になったら週始点を記録。rolled=切替が起きたか、prev=前週の始点。
