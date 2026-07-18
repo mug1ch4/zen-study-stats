@@ -253,6 +253,9 @@ function listenCompletions(): void {
           if (handled && ev) ev.timerHandled = true;
         });
       }
+      // 動画/教材の完了ごとに、今見ている章の「残り」バナーを静かに更新（点滅なし）。
+      // 動画完了PUTは r.ok 後に通知されるので章詳細は最新を返す。settle 経由の更新より速い。
+      refreshSummary();
       onCompletion();
     }
   });

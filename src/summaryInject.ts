@@ -202,11 +202,39 @@ export async function ensureCourseSummary(): Promise<void> {
   }
 }
 
-/** 完了検知後などに、残りサマリのキャッシュを捨てて最新の残りを取り直す。 */
+// 直近の refresh を束ねる（動画完了が連続しても取得は1回に）。
+let refreshTimer = 0;
+let refreshInflight = false;
+
+/** 完了検知後に、今いるページの残りサマリだけを"静かに"取り直して差し替える。
+ *  既存バナーは消さず数値のみ更新するため「集計中…」の点滅が出ない。動画完了ごとの更新用。 */
 export function refreshSummary(): void {
-  cache.clear();
-  electiveKeys.clear();
-  mountCount.clear();
-  document.getElementById(HOST_ID)?.remove();
-  void ensureCourseSummary();
+  window.clearTimeout(refreshTimer);
+  // 完了PUT直後は章詳細の反映に一瞬かかることがあるため、短い遅延で束ねてから取得。
+  refreshTimer = window.setTimeout(() => void doRefresh(), 400);
+}
+
+async function doRefresh(): Promise<void> {
+  if (refreshInflight) {
+    refreshSummary(); // 取得中に来た要求は取得後に再実行（最新を反映）
+    return;
+  }
+  const info = pathInfo();
+  if (!info || electiveKeys.has(info.key)) return; // 選択科目は集計しない
+  refreshInflight = true;
+  try {
+    const rem =
+      info.kind === 'chapter'
+        ? await fetchChapterRemaining(info.courseId, info.chapterId!)
+        : await fetchCourseRemaining(info.courseId);
+    cache.set(info.key, rem); // キャッシュも最新化（後続の ensureCourseSummary が古値を出さない）
+    const host = document.getElementById(HOST_ID);
+    const box = host?.getAttribute('data-key') === info.key ? (host.shadowRoot?.firstElementChild as HTMLElement | null) : null;
+    if (box) fillBanner(box, rem, info.kind); // 既存バナーを点滅なしで差し替え
+    else void ensureCourseSummary(); // バナー未設置なら通常設置（初回など）
+  } catch (e) {
+    console.warn('[ZSS] 残り再集計失敗（この画面では次の完了検知まで据え置き）:', e);
+  } finally {
+    refreshInflight = false;
+  }
 }
