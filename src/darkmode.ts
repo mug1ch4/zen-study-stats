@@ -360,7 +360,7 @@ function updateToggleIcon(): void {
   if (fbtn && fbtn.dataset.zssState !== want) {
     fbtn.classList.toggle('on', enabled);
     fbtn.textContent = '';
-    const em = document.createElement('span'); em.className = 'em'; em.textContent = enabled ? '☀️' : '🌙';
+    const em = document.createElement('span'); em.className = 'em'; em.textContent = enabled ? '☀︎' : '☾'; // ☀︎/☾ テキスト表示（カラー絵文字を避ける）
     const lb = document.createElement('span'); lb.textContent = enabled ? 'ライト' : 'ダーク';
     fbtn.append(em, lb);
     fbtn.dataset.zssState = want;

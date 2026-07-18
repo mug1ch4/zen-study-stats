@@ -816,7 +816,7 @@ function renderDeadlineRisks(risks: CourseDeadlineRisk[]): HTMLElement | null {
       const eta = r.etaDays === null ? '直近進んでおらず完了見込みが立ちません' : `完了まで約${r.etaDays}日 > 締切まで${Math.max(0, r.daysLeft)}日`;
       children.push(
         h('div', { class: `zss-deadline-risk-row ${r.risk}` }, [
-          r.risk === 'late' ? `⚠ ${r.title}: 残${r.remaining}・${pace} → ${eta}。このペースだと間に合わないかも。` : `△ ${r.title}: 残${r.remaining}・${pace} → ${eta}。余裕がありません。`,
+          r.risk === 'late' ? `⚠︎ ${r.title}: 残${r.remaining}・${pace} → ${eta}。このペースだと間に合わないかも。` : `△ ${r.title}: 残${r.remaining}・${pace} → ${eta}。余裕がありません。`,
         ])
       );
     }
@@ -862,7 +862,7 @@ function renderNextDeadline(st: DeadlineStatus, risks?: CourseDeadlineRisk[] | n
     const totalOver = st.overdue.reduce((a, o) => a + o.remaining, 0);
     children.push(
       h('div', { class: 'zss-deadline-over' }, [
-        `⚠ 締切超過: ${st.overdue.map((o) => md(o.deadline)).join('・')} の締切に未完の章が計${totalOver}あります（成績に影響する場合があります）。`,
+        `⚠︎ 締切超過: ${st.overdue.map((o) => md(o.deadline)).join('・')} の締切に未完の章が計${totalOver}あります（成績に影響する場合があります）。`,
       ])
     );
   }

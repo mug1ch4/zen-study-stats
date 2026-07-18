@@ -15,7 +15,7 @@ function hasStorage(): boolean {
 export function renderResultLogFold(renderSection: (s: Section) => HTMLElement): HTMLElement {
   if (!hasStorage()) {
     return h('details', { class: 'zss-fold zss-dm zss-rl' }, [
-      h('summary', {}, ['📥 詳細ログの抽出（受験記録の遡及復元）']),
+      h('summary', {}, ['⤓ 詳細ログの抽出（受験記録の遡及復元）']),
       h('p', { class: 'zss-dm-note' }, ['拡張機能として ZEN Study 上で動作しているときに利用できます（このデモでは無効です）。']),
     ]);
   }
@@ -75,7 +75,7 @@ export function renderResultLogFold(renderSection: (s: Section) => HTMLElement):
   });
 
   const det = h('details', { class: 'zss-fold zss-dm zss-rl' }, [
-    h('summary', {}, ['📥 詳細ログの抽出（受験記録の遡及復元）', chip]),
+    h('summary', {}, ['⤓ 詳細ログの抽出（受験記録の遡及復元）', chip]),
     h('p', { class: 'zss-dm-note' }, [
       '受験済みテスト/レポートの結果画面から、合否・点数・受験日時を収集します。拡張の導入以前の記録も復元でき、アクティブ時間帯・初回合格率・過去の教科別進度などの実測分析ができます。',
     ]),

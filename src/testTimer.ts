@@ -144,9 +144,9 @@ function mountWidget(): void {
   close.addEventListener('mouseleave', () => (close.style.opacity = '.7'));
   close.addEventListener('click', () => {
     void setTimerEnabled(false);
-    showToast('タイマーを非表示にしました。統計カードの「表示設定」から戻せます。', { icon: '⏱' });
+    showToast('タイマーを非表示にしました。統計カードの「表示設定」から戻せます。', { icon: '⏱︎' });
   });
-  widget.append('⏱ ', label, stateEl, close);
+  widget.append('⏱︎ ', label, stateEl, close); // FE0E=テキスト表示（絵文字カラー字形を避ける）
   document.body.appendChild(widget);
 }
 function removeWidget(): void {

@@ -63,7 +63,7 @@ export function ensureSidePanel(): void {
     body,
   ]);
   const handle = h('button', { class: 'zss-side-handle', title: '学習統計を開く', onclick: () => setOpen(root, !openState) }, [
-    h('span', {}, ['📊']),
+    h('span', {}, ['▤']),
     h('span', { class: 'zss-side-handle-label' }, ['学習統計']),
   ]);
   const wrap = h('div', { class: 'zss-side-wrap' + (openState ? ' open' : '') }, [handle, panel]);
