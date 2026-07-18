@@ -9,6 +9,9 @@ import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourSta
 import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
 import { evaluateCalibration } from '../calibration';
 import { reportDeadlineStatus, type DeadlineStatus } from '../deadlines';
+import { computeCourseDeadlineRisks, type CourseDeadlineRisk } from '../deadlineRisk';
+import { computeCoursePaces } from '../coursePace';
+import { fetchMonthlyReport } from '../api';
 import { zenMondayISO } from '../format';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, deadlineTendency, coursePaceTendency, type Section } from '../analysis';
 import { buildPlanIcs, downloadText } from '../ics';
@@ -419,7 +422,22 @@ async function renderPredictTab(
       report.months.map((m) => ({ year: m.year, month: m.month, deadline: m.deadline, total: m.total, passed: m.passed })),
       Date.now()
     );
-    const deadlineEl = renderNextDeadline(dstatus);
+    // 教科別ペース × 締切の章内訳 → 「このペースだと間に合わない教科」判定（GET 1回・失敗時は表示しないだけ）
+    let deadlineRisks: CourseDeadlineRisk[] | null = null;
+    if (dstatus.next) {
+      try {
+        const [detail, coursePassedHist] = await Promise.all([fetchMonthlyReport(dstatus.next.year, dstatus.next.month), getCoursePassedHistory()]);
+        const now = Date.now();
+        const groups = detail.deadline_groups.map((g) => ({
+          daysLeft: Math.ceil((new Date(g.deadline).getTime() - now) / 86400000),
+          chapters: g.chapters,
+        }));
+        deadlineRisks = computeCourseDeadlineRisks(groups, computeCoursePaces(coursePassedHist));
+      } catch (e) {
+        console.warn('[ZSS] 締切リスク判定をスキップ:', e);
+      }
+    }
+    const deadlineEl = renderNextDeadline(dstatus, deadlineRisks);
 
     // 予測スナップショット保存（1日1件）→ 的中率（キャリブレーション）評価
     if (pred.montecarlo && pred.remaining > 0) {
@@ -668,8 +686,39 @@ function questTargetOf(pred: Prediction): number {
   return isFinite(pred.requiredPerDay) ? Math.max(1, Math.ceil(pred.requiredPerDay)) : pred.remaining;
 }
 
+const r1w = (n: number): string => String(Math.round(n * 10) / 10);
+
+/** 教科別の締切リスク表示（教科別ペース蓄積 × 締切の章内訳）。 */
+function renderDeadlineRisks(risks: CourseDeadlineRisk[]): HTMLElement | null {
+  if (!risks.length) return null; // この締切に未完が無い（他要素で表示済み）
+  const risky = risks.filter((r) => r.risk === 'late' || r.risk === 'tight');
+  const judged = risks.filter((r) => r.risk !== 'unknown');
+  const children: HTMLElement[] = [h('div', { class: 'zss-deadline-risk-head' }, ['教科別ペースでの見込み'])];
+  if (risky.length) {
+    for (const r of risky.slice(0, 5)) {
+      const pace = r.perWeek !== null ? `約${r1w(r.perWeek)}/週` : 'ペース不明';
+      const eta = r.etaDays === null ? '直近進んでおらず完了見込みが立ちません' : `完了まで約${r.etaDays}日 > 締切まで${Math.max(0, r.daysLeft)}日`;
+      children.push(
+        h('div', { class: `zss-deadline-risk-row ${r.risk}` }, [
+          r.risk === 'late' ? `⚠ ${r.title}: 残${r.remaining}・${pace} → ${eta}。このペースだと間に合わないかも。` : `△ ${r.title}: 残${r.remaining}・${pace} → ${eta}。余裕がありません。`,
+        ])
+      );
+    }
+    if (risky.length > 5) children.push(h('div', { class: 'zss-deadline-risk-note' }, [`ほか ${risky.length - 5} 教科も要注意です。`]));
+  } else if (judged.length) {
+    children.push(h('div', { class: 'zss-deadline-risk-row ok' }, [`✓ ペース記録のある ${judged.length} 教科は、現在ペースで締切に間に合う見込みです。`]));
+  } else {
+    children.push(h('div', { class: 'zss-deadline-risk-note' }, ['教科別ペースを蓄積中。数日ぶん貯まると「このペースで間に合うか」を教科別に判定します。']));
+    return h('div', { class: 'zss-deadline-risk' }, children);
+  }
+  const unknownCount = risks.length - judged.length;
+  if (unknownCount > 0) children.push(h('div', { class: 'zss-deadline-risk-note' }, [`※${unknownCount} 教科はペース蓄積中のため未判定。`]));
+  children.push(h('div', { class: 'zss-deadline-risk-note' }, ['※教科全体の消化ペース（直近28日）からの近似判定です。免除の章は除外しています。']));
+  return h('div', { class: 'zss-deadline-risk' }, children);
+}
+
 /** 月次レポート締切: 「次の締切」を主役に、締切超過（成績に影響）を警告。年度末一発でない実態を反映。 */
-function renderNextDeadline(st: DeadlineStatus): HTMLElement | null {
+function renderNextDeadline(st: DeadlineStatus, risks?: CourseDeadlineRisk[] | null): HTMLElement | null {
   if (st.allClear && !st.next) {
     return h('div', { class: 'zss-deadline ok' }, [
       h('div', { class: 'zss-deadline-head' }, ['レポート締切']),
@@ -701,7 +750,12 @@ function renderNextDeadline(st: DeadlineStatus): HTMLElement | null {
       ])
     );
   }
-  return h('div', { class: 'zss-deadline' + (st.overdue.length ? ' warn' : '') }, children);
+  if (risks) {
+    const riskEl = renderDeadlineRisks(risks);
+    if (riskEl) children.push(riskEl);
+  }
+  const hasLate = !!risks?.some((r) => r.risk === 'late');
+  return h('div', { class: 'zss-deadline' + (st.overdue.length || hasLate ? ' warn' : '') }, children);
 }
 
 /** 週間目標: 週N教材の目標＋今週の進捗バー＋先週サマリ。日次の凸凹を吸収する中間粒度。

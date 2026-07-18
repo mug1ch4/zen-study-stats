@@ -237,6 +237,12 @@ export const CSS = `
 .zss-deadline-main .sub { font-size: 12px; font-weight: 400; color: var(--muted); }
 .zss-deadline-body, .zss-deadline-note { font-size: 11px; color: var(--muted); margin-top: 3px; }
 .zss-deadline-over { font-size: 12px; color: #d9822b; font-weight: 600; margin-top: 6px; line-height: 1.5; }
+.zss-deadline-risk { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.zss-deadline-risk-head { font-size: 11px; font-weight: 700; color: var(--primary-strong); margin-bottom: 2px; }
+.zss-deadline-risk-row { font-size: 12px; color: var(--ink); line-height: 1.6; }
+.zss-deadline-risk-row.late { color: #d9822b; font-weight: 600; }
+.zss-deadline-risk-row.ok { color: var(--success); }
+.zss-deadline-risk-note { font-size: 10.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
 
 /* --- 今日のデイリークエスト --- */
 .zss-quest {

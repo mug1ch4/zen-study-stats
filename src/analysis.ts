@@ -314,7 +314,7 @@ export function coursePaceTendency(history: CoursePassedHistory, courses: Course
         ? `${r.title}: 直近は進んでいません（このままだと完了時期は未定）。`
         : `${r.title}: 約 ${r1(r.perWeek)}/週 → このペースで完了まで 約${r.eta}日。`,
   }));
-  insights.push({ kind: 'note', text: '※教科ごとの passed 差分から算出。締切と突き合わせた「間に合わない教科」の警告は今後追加予定。' });
+  insights.push({ kind: 'note', text: '※教科ごとの passed 差分から算出。締切に間に合うかの教科別判定は「予測」タブの締切カードに表示します。' });
   return { title: '教科別ペース', insights };
 }
 

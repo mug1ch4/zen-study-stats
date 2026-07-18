@@ -12,6 +12,8 @@ export interface MonthDeadline {
 
 // 本家 /my_course 準拠の「レポート締切」1件分。daysLeft: +=あとN日 / 負=N日経過。
 export interface DeadlineItem {
+  year: number; // 月次詳細API(report_progresses/monthly)の参照に使う
+  month: number;
   deadline: Date;
   total: number;
   passed: number;
@@ -38,6 +40,8 @@ export function reportDeadlineStatus(months: MonthDeadline[], nowMs: number): De
     .map((m) => {
       const d = new Date(m.deadline);
       return {
+        year: m.year,
+        month: m.month,
         deadline: d,
         total: m.total,
         passed: m.passed,
