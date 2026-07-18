@@ -243,6 +243,8 @@ export const CSS = `
 .zss-deadline-risk-row.late { color: #d9822b; font-weight: 600; }
 .zss-deadline-risk-row.ok { color: var(--success); }
 .zss-deadline-risk-note { font-size: 10.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+.zss-setting-row { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--ink); line-height: 1.55; cursor: pointer; }
+.zss-setting-row input { margin-top: 2px; accent-color: var(--primary); }
 
 /* --- 今日のデイリークエスト --- */
 .zss-quest {

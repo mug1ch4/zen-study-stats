@@ -35,6 +35,7 @@ import { computeCourseVolumes } from '../courseStats';
 import { renderSubjects } from './volumeTable';
 import { renderDataManage } from './dataManage';
 import { renderResultLogFold } from './resultLogUi';
+import { getTimerEnabled, setTimerEnabled } from '../testTimer';
 import { getResultLog } from '../resultLog';
 import { retroSections } from '../resultStats';
 import type { CourseMaterial } from '../courseApi';
@@ -87,10 +88,34 @@ export function renderLearningCard(data: LearningAmounts, opts?: { defaultTab?: 
   const foot = card.querySelector('.zss-foot');
   card.insertBefore(details, foot);
   card.insertBefore(renderNotifyLog(), foot);
+  card.insertBefore(renderDisplaySettings(), foot);
   card.insertBefore(renderResultLogFold(renderInsightSection), foot);
   card.insertBefore(renderDataManage(), foot);
 
   return card;
+}
+
+/** 表示設定: 所要時間タイマーのON/OFF（今後の表示系オプションの置き場）。 */
+function renderDisplaySettings(): HTMLElement {
+  const hasStore = typeof chrome !== 'undefined' && !!chrome?.storage?.local;
+  if (!hasStore) {
+    return h('details', { class: 'zss-fold zss-dm' }, [
+      h('summary', {}, ['表示設定']),
+      h('p', { class: 'zss-dm-note' }, ['拡張機能として動作しているときに設定できます（このデモでは無効です）。']),
+    ]);
+  }
+  const cb = h('input', { type: 'checkbox' }) as HTMLInputElement;
+  void getTimerEnabled().then((v) => {
+    cb.checked = v;
+  });
+  cb.addEventListener('change', () => void setTimerEnabled(cb.checked));
+  return h('details', { class: 'zss-fold zss-dm' }, [
+    h('summary', {}, ['表示設定']),
+    h('label', { class: 'zss-setting-row' }, [
+      cb,
+      h('span', {}, ['未提出のテスト/レポート画面に所要時間タイマーを表示（教材ごとに累計・提出時に「所要時間の実測」へ自動記録。タブ非表示中は停止）']),
+    ]),
+  ]);
 }
 
 /** 通知履歴（トーストは消えるが、ここで見返せる）。開いた時に読み込み。 */

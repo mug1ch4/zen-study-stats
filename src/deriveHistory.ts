@@ -63,15 +63,18 @@ export function calendarData(series: Series[]): CalendarData {
 export interface StreakInfo {
   current: number;
   longest: number;
+  todayDone: boolean; // 今日すでに学習したか（false でも current は「昨日までの生存中の連続」）
 }
 export function streakInfo(series: Series[]): StreakInfo {
-  if (!series.length) return { current: 0, longest: 0 };
+  if (!series.length) return { current: 0, longest: 0, todayDone: false };
   const map = new Map(series.map((s) => [s.date, s.amount]));
   const end = todayISO();
+  const todayDone = (map.get(end) ?? 0) > 0;
 
-  // current: today から遡り amount>0 が連続する日数（欠損/0で途切れる）
+  // current: 「生存中の連続」。今日未学習でも昨日までの連続は途切れていない
+  // （途切れ確定は丸1日空いてから）。今日開いた時点で 0 と表示される違和感を避ける。
   let current = 0;
-  let d = end;
+  let d = todayDone ? end : addDays(end, -1);
   let g = 0;
   while (g++ < 3660) {
     const a = map.get(d);
@@ -96,7 +99,7 @@ export function streakInfo(series: Series[]): StreakInfo {
       prev = s.date;
     }
   }
-  return { current, longest };
+  return { current: Math.max(current, 0), longest: Math.max(longest, current), todayDone };
 }
 
 // ---- 長期トレンド ----

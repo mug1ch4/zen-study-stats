@@ -38,10 +38,14 @@ export function computeKpis(d: LearningAmounts): LearningKpis {
   };
 }
 
-/** 末尾(最新日)から遡り、amount>0 が連続する日数。null/0 で途切れる。 */
+/** 末尾(最新日)から遡り、amount>0 が連続する日数。null/0 で途切れる。
+ *  ただし末尾＝今日が未学習でも連続は「生存中」なので昨日から数える
+ *  （今日開いた時点で 0日 と出て、学習後に 9日 へ戻る違和感の修正。途切れ確定は丸1日空いてから）。 */
 export function computeStreak(days: DailyAmount[]): number {
+  let i = days.length - 1;
+  if (i >= 0 && !((days[i].amount ?? 0) > 0)) i--;
   let streak = 0;
-  for (let i = days.length - 1; i >= 0; i--) {
+  for (; i >= 0; i--) {
     const a = days[i].amount;
     if (a !== null && a > 0) streak++;
     else break;

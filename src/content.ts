@@ -8,6 +8,7 @@ import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, sn
 import { ensureCourseSummary, refreshSummary } from './summaryInject';
 import { ensureMyCourseUndone } from './myCourseInject';
 import { ensureSidePanel, removeSidePanel } from './ui/sidePanel';
+import { ensureTestTimer, notifyTimerSubmission, installTimerFlushHooks } from './testTimer';
 import { notifyRolloverSoon, notifyProgress, notifyWeekReview } from './notify';
 import { zenWeekStartISO, parseDate, weekdayLabel } from './format';
 import { showToast } from './ui/toast';
@@ -125,7 +126,7 @@ function maybeRecordVisit(): void {
 let compDebounce = 0;
 // 所要時間の実測: 直前の確定完了イベントからの間隔 ≒ その教材にかけた時間。
 // 曖昧なケースは記録しない（delta≠1・間隔が0.5〜45分の外・セッション初回）。
-interface CompletionEv { courseId: number; chapterId: number; resource: string; resourceId: number; ts: number }
+interface CompletionEv { courseId: number; chapterId: number; resource: string; resourceId: number; ts: number; timerHandled?: boolean }
 let pendingEv: CompletionEv | null = null;
 let prevConfirmedTs = 0;
 
@@ -133,6 +134,7 @@ async function maybeRecordWorkTime(ev: CompletionEv, delta: number): Promise<voi
   const kindM = /^(?:evaluation|essay)_(test|report)s$/.exec(ev.resource);
   const prev = prevConfirmedTs;
   prevConfirmedTs = ev.ts; // 動画含む全確定完了で基準を更新（次の間隔測定の起点）
+  if (ev.timerHandled) return; // タイマー実測で記録済み（間隔近似との二重計上を防ぐ）
   if (!kindM || delta !== 1 || !prev) return;
   const durMin = (ev.ts - prev) / 60000;
   if (durMin < 0.5 || durMin > 45) return; // 休憩・別作業を挟んだ間隔は捨てる
@@ -157,10 +159,11 @@ async function settleCompletion(attempt: number): Promise<void> {
     }
     const delta = mt.passed - prev;
     if (delta <= 0) {
-      // まだ集計に反映されていない可能性 → 少し待って再確認（最大3回）。
-      if (attempt < 3) {
-        window.setTimeout(() => void settleCompletion(attempt + 1), 3500);
-        if (DEV_NOTIFY) showToast(`⏳ [dev] passed 未反映（${mt.passed}）→ 再確認 ${attempt + 1}/3`, { icon: '⏳', accent: '#d9822b', durationMs: 6000, log: false });
+      // まだ集計に反映されていない可能性 → 少し待って再確認（間隔を広げつつ最大5回≒計30秒カバー）。
+      const RETRY_DELAYS = [2500, 3500, 5000, 8000, 12000];
+      if (attempt < RETRY_DELAYS.length) {
+        window.setTimeout(() => void settleCompletion(attempt + 1), RETRY_DELAYS[attempt]);
+        if (DEV_NOTIFY) showToast(`⏳ [dev] passed 未反映（${mt.passed}）→ 再確認 ${attempt + 1}/${RETRY_DELAYS.length}`, { icon: '⏳', accent: '#d9822b', durationMs: 6000, log: false });
         return;
       }
       // リトライ尽きても不変＝不合格/再提出/既計上 → 何もしない（下流は"確定分"だけ）
@@ -183,8 +186,9 @@ async function settleCompletion(attempt: number): Promise<void> {
   }
 }
 function onCompletion(): void {
+  // デバウンスは短め（1.5秒）: 早い集計反映ならすぐ拾い、遅い場合は settle 側のリトライが面倒を見る。
   window.clearTimeout(compDebounce);
-  compDebounce = window.setTimeout(() => void settleCompletion(0), 4000);
+  compDebounce = window.setTimeout(() => void settleCompletion(0), 1500);
 }
 function listenCompletions(): void {
   window.addEventListener('message', (e) => {
@@ -198,8 +202,10 @@ function listenCompletions(): void {
     if (d.__zss === 'completion') {
       if (DEV_NOTIFY) showToast(`🔎 [dev] 完了通信を検知: course ${d.courseId} / ch ${d.chapterId}`, { icon: '🔎', durationMs: 9000, log: false });
       const dd = d as { courseId?: string; chapterId?: string; resource?: string; resourceId?: string };
+      // タイマー計測中の教材の提出なら、実測の所要時間を確定記録（間隔近似より正確・二重計上は防ぐ）
+      const timerHandled = dd.resourceId ? notifyTimerSubmission(+dd.resourceId) : false;
       if (dd.courseId && dd.chapterId && dd.resource && dd.resourceId) {
-        pendingEv = { courseId: +dd.courseId, chapterId: +dd.chapterId, resource: dd.resource, resourceId: +dd.resourceId, ts: Date.now() };
+        pendingEv = { courseId: +dd.courseId, chapterId: +dd.chapterId, resource: dd.resource, resourceId: +dd.resourceId, ts: Date.now(), timerHandled };
       }
       onCompletion();
     }
@@ -213,6 +219,7 @@ function onRouteChange(): void {
   ensureToggleMounted(); // ナビ再描画でトグルが消えても再設置
   void ensureCourseSummary(); // コース/チャプターの残りサマリ
   ensureMyCourseUndone(); // /my_course の未完科目注入
+  void ensureTestTimer(); // 未提出テスト/レポートの所要タイマー（対象外ページなら保存して撤去）
   void maybeRecordVisit(); // 学習中の時間帯サンプリング（20分間隔）
   void notifyRolloverSoon(); // 5:00の日付更新間近を通知（窓外なら即抜け）
 }
@@ -273,6 +280,8 @@ function startup(): void {
   });
   patchHistory();
   listenCompletions(); // 完了検知（observer.js からの通知）を購読
+  installTimerFlushHooks(); // タイマー蓄積のページ離脱時保存
+  void ensureTestTimer(); // 直接テストページを開いた場合の計測開始
   window.addEventListener('zss:locationchange', onRouteChange);
   sync();
   void ensureCourseSummary();

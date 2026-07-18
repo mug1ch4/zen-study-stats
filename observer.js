@@ -9,21 +9,32 @@
   } catch (e) {
     return;
   }
-  // 完了/提出の URL パターン（HAR実測）:
-  //   動画: PUT  .../n_school/courses/{c}/chapters/{ch}/movies/{id}/progress/passed
-  //   テスト: POST .../n_school/courses/{c}/chapters/{ch}/evaluation_tests/{id}/answerings
-  //   （レポート等の answerings 系も同形と想定）
-  var RE = /\/n_school\/courses\/(\d+)\/chapters\/(\d+)\/([a-z_]+)\/(\d+)\/(?:progress\/passed|answerings)\b/i;
+  // 完了/提出の URL パターン:
+  //   動画:   PUT  .../n_school/courses/{c}/chapters/{ch}/movies/{id}/progress/passed（HAR実測）
+  //   テスト: POST .../n_school/courses/{c}/chapters/{ch}/evaluation_tests/{id}/answerings（HAR実測）
+  //   別系統: POST .../material/courses/{c}/chapters/{ch}/essay_tests/{id}/answerings（本家バンドルに存在）
+  //           PUT  .../material/{type}/{id}/progress ・ POST .../material/exercises/{id}/answers（同上）
+  //   ※material 系の取りこぼしが「今日の目標の反映が遅い」原因になり得るため全系統を観測する。
+  var RE = /\/(?:n_school|material)\/courses\/(\d+)\/chapters\/(\d+)\/([a-z_]+)\/(\d+)\/(?:progress\/passed|answerings)\b/i;
+  var RE2 = /\/material\/([a-z_]+)\/(\d+)\/(?:progress|answers)\b/i;
   function report(method, url) {
     try {
       if (!/^(PUT|POST)$/i.test(method || '')) return;
-      var m = String(url || '').match(RE);
-      if (!m) return;
+      var u = String(url || '');
       // 完了PUTは教材iframe内から送られるため、トップフレームの content.js へ通知する
       // （iframe と top は同一オリジン www.nnn.ed.nico）。top 不在時は自分へ。
       // resource(movies/evaluation_tests/…)とidは所要時間の実測（教科別の分/問）に使う。
       var target = window.top || window;
-      target.postMessage({ __zss: 'completion', courseId: m[1], chapterId: m[2], resource: m[3], resourceId: m[4] }, '*');
+      var m = u.match(RE);
+      if (m) {
+        target.postMessage({ __zss: 'completion', courseId: m[1], chapterId: m[2], resource: m[3], resourceId: m[4] }, '*');
+        return;
+      }
+      var m2 = u.match(RE2);
+      if (m2) {
+        // course/chapter がURLに無い系統。集計トリガーとしては十分（settle側は passed 増分で確定）。
+        target.postMessage({ __zss: 'completion', courseId: '', chapterId: '', resource: m2[1], resourceId: m2[2] }, '*');
+      }
     } catch (e) {
       /* noop */
     }
@@ -37,7 +48,7 @@
         try {
           var url = typeof input === 'string' ? input : input && input.url;
           var method = (init && init.method) || (input && typeof input !== 'string' && input.method) || 'GET';
-          if (/^(PUT|POST)$/i.test(method) && RE.test(url || '') && p && typeof p.then === 'function') {
+          if (/^(PUT|POST)$/i.test(method) && (RE.test(url || '') || RE2.test(url || '')) && p && typeof p.then === 'function') {
             p.then(function (r) { if (r && r.ok) report(method, url); }).catch(function () {});
           }
         } catch (e) {
@@ -71,7 +82,7 @@
     XMLHttpRequest.prototype.send = function () {
       try {
         var xhr = this;
-        if (/^(PUT|POST)$/i.test(xhr.__zssM || '') && RE.test(xhr.__zssU || '')) {
+        if (/^(PUT|POST)$/i.test(xhr.__zssM || '') && (RE.test(xhr.__zssU || '') || RE2.test(xhr.__zssU || ''))) {
           xhr.addEventListener('loadend', function () {
             if (xhr.status >= 200 && xhr.status < 300) report(xhr.__zssM, xhr.__zssU);
           });
