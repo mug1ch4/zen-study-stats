@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseResultParams } from '../src/resultLog';
-import { resultEvents, retroDaily, retroHours, retroSections } from '../src/resultStats';
+import { resultEvents, retroDaily, retroHours, retroSections, completionEvents, courseRetroRemaining, courseEventPace } from '../src/resultStats';
+import type { MovieEvent } from '../src/movieInterp';
 import type { ResultEntry } from '../src/resultLog';
 
 const esc = (j: unknown) => JSON.stringify(j).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -105,5 +106,60 @@ describe('resultStats', () => {
   });
   it('retroSections: 空なら空配列', () => {
     expect(retroSections([], new Map())).toEqual([]);
+  });
+});
+
+const mev = (at: number, courseId = 1): MovieEvent => ({ at, courseId, len: 600, uncertaintySec: 0 });
+
+describe('教科別バーンダウン（抽出ログの後方外挿）', () => {
+  it('completionEvents: passed のみ・合格時刻＋補間動画を統合ソート', () => {
+    const es = completionEvents(
+      [
+        entry({ sectionId: 1, passed: true, firstPassed: true, firstAt: 100 }),
+        entry({ sectionId: 2, passed: true, firstPassed: false, firstAt: 200, latestAt: 500 }), // 初回不合格→再合格500
+        entry({ sectionId: 3, passed: false, firstAt: 300 }), // 未合格は除外
+      ],
+      [mev(400)]
+    );
+    expect(es.map((e) => e.at)).toEqual([100, 400, 500]);
+  });
+
+  it('courseRetroRemaining: 最終日で現在passedに一致・過去は相対的に戻る', () => {
+    // total=20, currentPassed=10, イベント3件（3教材ぶんの完了を観測）
+    const evs = [
+      { at: JST(2026, 7, 5, 10), courseId: 1 },
+      { at: JST(2026, 7, 8, 10), courseId: 1 },
+      { at: JST(2026, 7, 10, 10), courseId: 1 },
+    ];
+    const r = courseRetroRemaining(20, 10, evs);
+    expect(r).toHaveLength(3);
+    // 最終日: passedEst = 10-3+3 = 10 → remaining 10
+    expect(r[2]).toEqual({ date: '2026-07-10', remaining: 10 });
+    // 中日: 10-3+2=9 → remaining 11 / 初日: 10-3+1=8 → remaining 12
+    expect(r[1].remaining).toBe(11);
+    expect(r[0].remaining).toBe(12);
+  });
+  it('courseRetroRemaining: イベント無しは空', () => {
+    expect(courseRetroRemaining(20, 10, [])).toEqual([]);
+  });
+  it('courseRetroRemaining: remaining は [0,total] にクランプ', () => {
+    const evs = [{ at: JST(2026, 7, 5, 10), courseId: 1 }, { at: JST(2026, 7, 6, 10), courseId: 1 }];
+    const r = courseRetroRemaining(5, 5, evs); // total=5,passed=5,E=2 → 初日 5-2+1=4→rem1
+    expect(r.every((p) => p.remaining >= 0 && p.remaining <= 5)).toBe(true);
+  });
+
+  it('courseEventPace: 直近窓のイベント/日', () => {
+    const now = JST(2026, 7, 20, 12) * 1000;
+    const evs = [
+      { at: JST(2026, 7, 10, 10), courseId: 1 },
+      { at: JST(2026, 7, 12, 10), courseId: 1 },
+      { at: JST(2026, 7, 14, 10), courseId: 1 },
+    ];
+    const pace = courseEventPace(evs, now);
+    expect(pace).not.toBeNull();
+    expect(pace!).toBeGreaterThan(0);
+  });
+  it('courseEventPace: 1件以下は null', () => {
+    expect(courseEventPace([{ at: 1000, courseId: 1 }], Date.UTC(2026, 6, 20))).toBeNull();
   });
 });

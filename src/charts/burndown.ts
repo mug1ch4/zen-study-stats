@@ -21,8 +21,10 @@ export interface CourseBurn {
   title: string;
   total: number;
   remaining: number;
-  actual: Pt[]; // 教科別 passed 履歴からの日次残り
+  actual: Pt[]; // 教科別 passed 履歴からの日次残り（直接観測・実線）
+  retroActual?: Pt[]; // 抽出ログ由来の後方外挿（導入前も含む推定・点線）
   perDay: number | null; // 教科別の現在ペース（教材/日）。null=蓄積不足
+  paceFromAnchor?: boolean; // ペースがアンカーイベント由来（凡例表示用）
   finalDeadline: Date;
 }
 
@@ -93,7 +95,15 @@ export function renderCourseBurndown(c: CourseBurn, tip: Tooltip): SVGElement {
       svg.appendChild(s('text', { x: fx, y: T + 8, 'text-anchor': 'middle', 'font-size': 9, fill: col, 'font-weight': 700, class: 'zss-afade', style: 'animation-delay:800ms' }, [`${fd.getMonth() + 1}/${fd.getDate()}`]));
     }
   }
-  // 実績
+  // 抽出ログ由来の後方外挿（推定・点線・薄く）。直接観測より前の期間を主に埋める。
+  if (c.retroActual && c.retroActual.length > 1) {
+    const rp = c.retroActual.filter((p) => parseDate(p.date).getTime() <= t1);
+    if (rp.length > 1) {
+      const pts = rp.map((p) => `${x(parseDate(p.date).getTime()).toFixed(1)},${y(p.remaining).toFixed(1)}`).join(' ');
+      svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 1.5, 'stroke-dasharray': '3 3', opacity: 0.5, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));
+    }
+  }
+  // 実績（直接観測・実線）
   if (c.actual.length > 1) {
     const pts = c.actual.map((p) => `${x(parseDate(p.date).getTime()).toFixed(1)},${y(p.remaining).toFixed(1)}`).join(' ');
     svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));

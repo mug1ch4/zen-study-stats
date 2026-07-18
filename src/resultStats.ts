@@ -2,9 +2,63 @@
 // 導入以前の期間も含む「実測」: 日別×教科の進度・アクティブ時間帯・初回合格率・レポート得点率。
 import type { Section, Insight } from './analysis';
 import type { ResultEntry } from './resultLog';
+import type { MovieEvent } from './movieInterp';
 import { zenTodayISO } from './format';
 
 const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+const DAY = 86400000;
+
+export interface CompletionEv {
+  at: number; // 教材が passed になった時刻 epoch秒
+  courseId: number;
+}
+
+/** 教材が passed になった時刻のイベント（教科別バーンダウンの後方外挿用）。
+ *  受験アンカー（合格した回の時刻・1教材=1件で再受験は数えない）＋補間動画。 */
+export function completionEvents(entries: ResultEntry[], movieEvents: MovieEvent[]): CompletionEv[] {
+  const out: CompletionEv[] = [];
+  for (const e of entries) {
+    if (!e.passed) continue;
+    // 合格した時刻: first で合格していれば first、そうでなければ latest（essayは firstAt=単一）
+    const at = e.firstPassed === false ? e.latestAt ?? e.firstAt : e.firstAt ?? e.latestAt;
+    if (at) out.push({ at, courseId: e.courseId });
+  }
+  for (const m of movieEvents) out.push({ at: m.at, courseId: m.courseId });
+  return out.sort((a, b) => a.at - b.at);
+}
+
+/** 後方外挿による教科別の残り推移（導入前も含む実績近似・純関数）。
+ *  現在 passed に総イベント数を対応させ、各日の累積で相対的に戻す。
+ *  ＝アンカー基準（確定時刻）なので傾き＝「いつ進めたか」は正確。ただし補間漏れ動画・
+ *  supplement 差により絶対レベルは過小になりうるため「推定」として点線で描く。 */
+export function courseRetroRemaining(total: number, currentPassed: number, events: CompletionEv[]): { date: string; remaining: number }[] {
+  if (!events.length) return [];
+  const byDay = new Map<string, number>();
+  for (const ev of events) {
+    const d = zenTodayISO(ev.at * 1000);
+    byDay.set(d, (byDay.get(d) ?? 0) + 1);
+  }
+  const E = events.length;
+  const days = [...byDay.keys()].sort();
+  let cum = 0;
+  const out: { date: string; remaining: number }[] = [];
+  for (const d of days) {
+    cum += byDay.get(d)!;
+    const passedEst = currentPassed - E + cum; // 最終日で cum=E → passedEst=currentPassed
+    out.push({ date: d, remaining: Math.max(0, Math.min(total, total - passedEst)) });
+  }
+  return out;
+}
+
+/** アンカーイベントの直近ペース（教材/日）。coursePassedHist が薄いときの安全なフォールバック。 */
+export function courseEventPace(events: CompletionEv[], nowMs: number, windowMs = 28 * DAY): number | null {
+  if (events.length < 2) return null;
+  const from = nowMs - windowMs;
+  const inWin = events.filter((e) => e.at * 1000 >= from);
+  if (inWin.length < 2) return null;
+  const span = Math.max(DAY, (inWin[inWin.length - 1].at - inWin[0].at) * 1000);
+  return inWin.length / (span / DAY);
+}
 
 /** 受験イベント列（first/latest の epoch秒。同一時刻の重複は1つに）。 */
 export function resultEvents(entries: ResultEntry[]): { at: number; courseId: number }[] {

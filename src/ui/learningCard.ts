@@ -37,9 +37,9 @@ import { renderSubjects } from './volumeTable';
 import { renderDataManage } from './dataManage';
 import { renderResultLogFold } from './resultLogUi';
 import { getTimerEnabled, setTimerEnabled } from '../testTimer';
-import { getResultLog, getChapterSkels } from '../resultLog';
-import { retroSections, retroHours, resultEvents } from '../resultStats';
-import { interpolateMovieEvents, movieHours } from '../movieInterp';
+import { getResultLog, getChapterSkels, type ResultEntry } from '../resultLog';
+import { retroSections, retroHours, resultEvents, completionEvents, courseRetroRemaining, courseEventPace } from '../resultStats';
+import { interpolateMovieEvents, movieHours, type MovieEvent } from '../movieInterp';
 import { renderPunch, type PunchEvent } from '../charts/punch';
 import type { CourseMaterial } from '../courseApi';
 
@@ -434,6 +434,13 @@ async function renderPredictTab(
     const total = courses.reduce((a, c) => a + c.total, 0);
     const passed = courses.reduce((a, c) => a + c.passed, 0);
     const mh = await getMaterialHistory();
+    // 教科別バーンダウン用: 直接観測(coursePassedHist)＋抽出ログ(受験アンカー・補間動画)
+    const [subjCoursePassedHist, subjResultLog, subjSkels] = await Promise.all([
+      getCoursePassedHistory().catch(() => [] as CoursePassedHistory),
+      getResultLog().catch(() => [] as ResultEntry[]),
+      getChapterSkels().catch(() => ({})),
+    ]);
+    const subjMovieEvents = interpolateMovieEvents(subjSkels, subjResultLog);
 
     // cold-start シード: 導入直後は自前蓄積が薄い。APIの直近14日窓(data.daily_amount)と
     // 自前履歴を日付でマージし「取れるだけの日次」を確保（新規でも初日から予測を出せる）。
@@ -531,7 +538,7 @@ async function renderPredictTab(
       Date.now()
     );
     // 教科別ペース × 締切の章内訳 → 「このペースだと間に合わない教科」判定（GET 1回・失敗時は表示しないだけ）
-    const coursePassedHist = await getCoursePassedHistory().catch(() => []);
+    const coursePassedHist = subjCoursePassedHist; // 上で取得済みを再利用
     let deadlineRisks: CourseDeadlineRisk[] | null = null;
     if (dstatus.next) {
       try {
@@ -570,7 +577,7 @@ async function renderPredictTab(
         weekEl,
         calNote,
         deadlineEl,
-        subjectBurndown: { courses, hist: coursePassedHist },
+        subjectBurndown: { courses, hist: subjCoursePassedHist, resultLog: subjResultLog, movieEvents: subjMovieEvents },
       })
     );
 
@@ -979,7 +986,7 @@ function renderPredictorSection(
     weekEl?: HTMLElement | null;
     calNote?: string;
     deadlineEl?: HTMLElement | null;
-    subjectBurndown?: { courses: CourseMaterial[]; hist: CoursePassedHistory } | null;
+    subjectBurndown?: { courses: CourseMaterial[]; hist: CoursePassedHistory; resultLog: ResultEntry[]; movieEvents: MovieEvent[] } | null;
   }
 ): HTMLElement {
   // 見出しの判定（モンテカルロの確率・パーセンタイルを主に）
@@ -1090,6 +1097,7 @@ function renderPredictorSection(
     const course = bd?.courses.find((c) => c.id === bdSelId);
     if (!bd || !course) return;
     const rem = Math.max(0, course.total - course.passed);
+    // 直接観測（coursePassedHist・導入後）
     const pts: { date: string; remaining: number }[] = [];
     for (const row of bd.hist) {
       const p = row.byCourse[bdSelId];
@@ -1097,15 +1105,33 @@ function renderPredictorSection(
     }
     const todayIso = isoDate(zenToday());
     if (!pts.length || pts[pts.length - 1].date !== todayIso) pts.push({ date: todayIso, remaining: rem });
+    // 抽出ログ由来の後方外挿（導入前も含む・アンカー確定時刻ベースで安全）
+    const evs = completionEvents(
+      bd.resultLog.filter((e) => e.courseId === bdSelId),
+      bd.movieEvents.filter((m) => m.courseId === bdSelId)
+    );
+    const retroActual = courseRetroRemaining(course.total, course.passed, evs);
+    // ペース: 直接観測が十分ならそれ、薄ければアンカーイベントの直近ペース（長期間で安定）
     const pace = computeCoursePaces(bd.hist).get(bdSelId);
-    const perDay = pace && pace.samples >= 2 ? pace.perDay : null;
-    chartHost.appendChild(renderCourseBurndown({ title: course.title, total: course.total, remaining: rem, actual: pts, perDay, finalDeadline: pred.finalDeadline }, tip));
+    let perDay = pace && pace.samples >= 2 ? pace.perDay : null;
+    let paceFromAnchor = false;
+    if (perDay === null) {
+      const ap = courseEventPace(evs, Date.now());
+      if (ap !== null) {
+        perDay = ap;
+        paceFromAnchor = true;
+      }
+    }
+    chartHost.appendChild(
+      renderCourseBurndown({ title: course.title, total: course.total, remaining: rem, actual: pts, retroActual, perDay, paceFromAnchor, finalDeadline: pred.finalDeadline }, tip)
+    );
     const daysLeft = Math.max(0, (pred.finalDeadline.getTime() - zenToday().getTime()) / 86400000);
     const ok = perDay !== null && perDay > 0 && rem / perDay <= daysLeft;
     legendHost.appendChild(legendLine('var(--muted)', '必要ライン'));
     legendHost.appendChild(legendItem('var(--primary)', '実績'));
-    if (perDay !== null) legendHost.appendChild(legendLine(ok ? 'var(--success)' : '#d9822b', `現在ペース（約${Math.round(perDay * 7 * 10) / 10}/週）`));
-    else legendHost.appendChild(h('span', { class: 'zss-tsub-note' }, ['教科別ペースは蓄積中（数日で投影線が出ます）']));
+    if (retroActual.length > 1) legendHost.appendChild(legendLine('var(--primary)', '過去の推定（抽出ログ）'));
+    if (perDay !== null) legendHost.appendChild(legendLine(ok ? 'var(--success)' : '#d9822b', `現在ペース（約${Math.round(perDay * 7 * 10) / 10}/週${paceFromAnchor ? '・受験基準' : ''}）`));
+    else legendHost.appendChild(h('span', { class: 'zss-tsub-note' }, ['教科別ペースは蓄積中（詳細ログの抽出でも表示できます）']));
   };
   const drawChart = (target: Date | null): void => {
     bdLastTarget = target;
