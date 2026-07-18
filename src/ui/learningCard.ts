@@ -34,6 +34,9 @@ import { bayesianAverage } from '../shrinkage';
 import { computeCourseVolumes } from '../courseStats';
 import { renderSubjects } from './volumeTable';
 import { renderDataManage } from './dataManage';
+import { renderResultLogFold } from './resultLogUi';
+import { getResultLog } from '../resultLog';
+import { retroSections } from '../resultStats';
 import type { CourseMaterial } from '../courseApi';
 
 /** 統合「学習数」カード。常時表示はコンパクトな要点のみ、詳細（グラフ）はタブで直下に展開。 */
@@ -84,6 +87,7 @@ export function renderLearningCard(data: LearningAmounts, opts?: { defaultTab?: 
   const foot = card.querySelector('.zss-foot');
   card.insertBefore(details, foot);
   card.insertBefore(renderNotifyLog(), foot);
+  card.insertBefore(renderResultLogFold(renderInsightSection), foot);
   card.insertBefore(renderDataManage(), foot);
 
   return card;
@@ -563,6 +567,10 @@ async function renderAnalysisTab(
     };
     const unlocked0 = new Set(computeUnlocked(achInput0));
 
+    // 詳細ログ（収集済みなら遡及実測セクションを挿入。未収集なら何も出さない）
+    const resultLog = await getResultLog().catch(() => []);
+    const retro = resultLog.length ? retroSections(resultLog, new Map(courses.map((c) => [c.id, c.title]))) : [];
+
     const sections: Section[] = [
       journeySummary(merged, passedMat0, totalMat0, streak0.longest, unlocked0.size, ACHIEVEMENTS.length),
       deadlineTendency(report, deadlineOutcomes),
@@ -571,6 +579,7 @@ async function renderAnalysisTab(
       distributionSummary(merged),
       weekdayTendency(merged),
       timeOfDayTendency(hour),
+      ...retro,
       coursePaceTendency(coursePassedHist, courses),
       workTimeTendency(workTimes, courses),
       monthlyTendency(merged),

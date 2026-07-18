@@ -28,11 +28,13 @@ export interface CourseBatch {
   chapters: ChapterBrief[];
 }
 export interface Section {
+  id?: number; // 教材ID（結果ログ収集で使用）
   resource_type: string; // movie / evaluation_test / essay_test / evaluation_report / essay_report
   material_type?: string; // "main"=必須教材 / "supplement"=視聴任意（本家の進捗カウント対象外）
   length?: number; // movie の秒数
   total_question?: number; // test の問題数
   passed: boolean;
+  done?: boolean; // 解答済み（evaluation_test/evaluation_report のみ。不合格でも true）
 }
 
 /** 視聴任意（supplement）か。本家の progress（total_count/passed_materials）は main のみを数える
@@ -232,11 +234,13 @@ async function fetchChapterBatch(courseId: number, chapterIds: number[]): Promis
   return (arr as ChapterSections[]).map((ch) => ({
     id: ch.id,
     sections: (ch.sections ?? []).map((s) => ({
+      id: s.id,
       resource_type: s.resource_type,
       material_type: s.material_type,
       length: s.length,
       total_question: s.total_question,
       passed: s.passed,
+      done: s.done,
     })),
   }));
 }
