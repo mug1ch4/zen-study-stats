@@ -37,8 +37,9 @@ import { renderDataManage } from './dataManage';
 import { renderResultLogFold } from './resultLogUi';
 import { getTimerEnabled, setTimerEnabled } from '../testTimer';
 import { getResultLog, getChapterSkels } from '../resultLog';
-import { retroSections, retroHours } from '../resultStats';
+import { retroSections, retroHours, resultEvents } from '../resultStats';
 import { interpolateMovieEvents, movieHours } from '../movieInterp';
+import { renderPunch, type PunchEvent } from '../charts/punch';
 import type { CourseMaterial } from '../courseApi';
 
 /** 統合「学習数」カード。常時表示はコンパクトな要点のみ、詳細（グラフ）はタブで直下に展開。 */
@@ -306,30 +307,38 @@ async function renderRecentTab(
         'PCで動画/テスト等を完了すると、その時刻を記録します（数回で傾向が出ます）。カード下部の「詳細ログの抽出」を実行すると、過去の受験時刻からも表示できます。',
       ]);
     }
+    // 日別パンチカード用イベント（受験＝実測・動画＝補間）
+    const punchEvents: PunchEvent[] = [
+      ...resultEvents(rlog).map((e) => ({ at: e.at, kind: 'sub' as const })),
+      ...movieEvents.map((m) => ({ at: m.at, kind: 'movie' as const })),
+    ];
     const NOTES = {
       live: '学習が進む時間帯（完了検知でその時刻を記録・自動更新）',
-      retro: `受験の時間帯（詳細ログ＝テスト/レポートの受験日時。導入以前も含む実測${movieEvents.length ? `＋動画${movieEvents.length}本を前後の受験時刻から補間` : '・動画の視聴時刻は前後の受験間隔が整合する場合のみ補間'}）`,
+      retro: `受験の時間帯・全期間の合計（詳細ログ＝テスト/レポートの受験日時。導入以前も含む実測${movieEvents.length ? `＋動画${movieEvents.length}本を前後の受験時刻から補間` : '・動画の視聴時刻は前後の受験間隔が整合する場合のみ補間'}）`,
+      punch: '日別の学習時刻（縦=時刻・5時はじまり。●受験は分単位の実測・小さい●動画は前後の受験間隔が整合する場合のみ補間）',
     } as const;
-    let hmode: 'live' | 'retro' = liveTotal > 0 ? 'live' : 'retro';
+    let hmode: 'live' | 'retro' | 'punch' = liveTotal > 0 ? 'live' : 'retro';
     const note = h('div', { class: 'zss-tsub-note' }, []);
     const chartWrap = h('div', {}, []);
     const seg = h('div', { class: 'zss-seg' }, []);
-    const hmodes: ['live' | 'retro', string][] = [['live', '完了検知'], ['retro', '受験記録']];
+    const hmodes: ['live' | 'retro' | 'punch', string][] = [['live', '完了検知'], ['retro', '受験·平均'], ['punch', '受験·日別']];
     const btns: HTMLElement[] = [];
     const apply = (): void => {
       btns.forEach((x, i) => x.classList.toggle('on', hmodes[i][0] === hmode));
       note.textContent = NOTES[hmode];
-      const dataArr = hmode === 'live' ? hs.study : retro;
       chartWrap.textContent = '';
-      chartWrap.appendChild(
-        dataArr.reduce((a, b) => a + b, 0) > 0
-          ? wrapChart(renderHourBars(dataArr, tip))
-          : h('div', { class: 'zss-empty' }, [
-              hmode === 'retro'
-                ? 'カード下部の「詳細ログの抽出」を実行すると、過去の受験時刻から表示できます。'
-                : 'PCで動画/テスト等を完了すると、その時刻を記録します（数回で傾向が出ます）。',
-            ])
-      );
+      const emptyNote = (m: typeof hmode): HTMLElement =>
+        h('div', { class: 'zss-empty' }, [
+          m === 'live'
+            ? 'PCで動画/テスト等を完了すると、その時刻を記録します（数回で傾向が出ます）。'
+            : 'カード下部の「詳細ログの抽出」を実行すると、過去の受験時刻から表示できます。',
+        ]);
+      if (hmode === 'punch') {
+        chartWrap.appendChild(punchEvents.length ? wrapChart(renderPunch(punchEvents, tip)) : emptyNote(hmode));
+        return;
+      }
+      const dataArr = hmode === 'live' ? hs.study : retro;
+      chartWrap.appendChild(dataArr.reduce((a, b) => a + b, 0) > 0 ? wrapChart(renderHourBars(dataArr, tip)) : emptyNote(hmode));
     };
     for (const [m, label] of hmodes) {
       const b = h('button', {}, [label]);
