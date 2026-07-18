@@ -112,6 +112,8 @@ export const CSS = `
 .zss-dtable-wrap { max-height: 220px; overflow: auto; margin-top: 6px; }
 .zss-dtable { border-collapse: collapse; width: 100%; font-size: 11px; font-variant-numeric: tabular-nums; }
 .zss-dtable th, .zss-dtable td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+/* 教科名(第1列)は長いので折り返し可＝数値列がはみ出て横スクロールになるのを抑える */
+.zss-dtable th:first-child, .zss-dtable td:first-child { white-space: normal; word-break: break-word; min-width: 8em; }
 .zss-dtable th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
 .zss-dtable td:not(:first-child) { text-align: right; }
 

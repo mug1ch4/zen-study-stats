@@ -939,8 +939,13 @@ function renderElectiveSubjects(courses: ElectiveCourse[]): HTMLElement {
     ...rows,
     dataTable(
       'データを表で見る',
-      ['教科', '理解度%', '閲覧', '教材数', '習熟度合格', '習熟度総'],
-      sorted.map((c) => [c.title, c.compLimit ? Math.floor((c.compDone / c.compLimit) * 100) : 0, c.compDone, c.compLimit, c.testPassed, c.testTotal])
+      ['教科', '理解度%', '理解度(閲覧/総)', '習熟度テスト'],
+      sorted.map((c) => [
+        c.title,
+        c.compLimit ? Math.floor((c.compDone / c.compLimit) * 100) : 0,
+        `${c.compDone}/${c.compLimit}`,
+        c.testTotal ? `${c.testPassed}/${c.testTotal}` : '—',
+      ])
     ),
   ]);
 }
