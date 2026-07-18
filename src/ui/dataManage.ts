@@ -23,6 +23,7 @@ const SKIP_KEYS = new Set([
   'zss:dayStart',
   'zss:notify',
   'zss:timerAcc', // 未提出タイマーの一時蓄積（端末ごとの進行中状態。確定分は workTime に入る）
+  'zss:chapterSkels', // 章の教材並びキャッシュ（詳細ログ抽出の実行で再構築可能）
 ]);
 // 日付→数値の履歴系（インポート時に統合する）
 const HIST_KEYS = new Set(['zss:history', 'zss:reportHist', 'zss:materialHist', 'zss:materialTotalHist', 'zss:coursePassedHist', 'zss:deadlineOutcomes', 'zss:resultLog']);

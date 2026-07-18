@@ -36,8 +36,9 @@ import { renderSubjects } from './volumeTable';
 import { renderDataManage } from './dataManage';
 import { renderResultLogFold } from './resultLogUi';
 import { getTimerEnabled, setTimerEnabled } from '../testTimer';
-import { getResultLog } from '../resultLog';
+import { getResultLog, getChapterSkels } from '../resultLog';
 import { retroSections, retroHours } from '../resultStats';
+import { interpolateMovieEvents, movieHours } from '../movieInterp';
 import type { CourseMaterial } from '../courseApi';
 
 /** 統合「学習数」カード。常時表示はコンパクトな要点のみ、詳細（グラフ）はタブで直下に展開。 */
@@ -288,11 +289,16 @@ async function renderRecentTab(
     return h('div', {}, [h('div', { class: 'zss-tsub' }, [seg]), trendChart]);
   };
 
-  // 時間帯: ソース切替（完了検知=ライブ実測 / 受験記録=詳細ログの遡及実測）。
+  // 時間帯: ソース切替（完了検知=ライブ実測 / 受験記録=詳細ログの遡及実測＋動画補間）。
   // 導入後の提出は両方に記録されるため合算はしない（二重計上防止）。
   const buildHour = async (): Promise<HTMLElement> => {
-    const [hs, rlog] = await Promise.all([getHourStats(), getResultLog().catch(() => [])]);
+    const [hs, rlog, skels] = await Promise.all([getHourStats(), getResultLog().catch(() => []), getChapterSkels().catch(() => ({}))]);
+    // 動画の視聴時刻: 前後の受験アンカー間の時間幅が動画の合計実時間と整合する場合のみ補間採用
+    // （倍速不可・直列という本家仕様が根拠。中断を挟んだ窓は不採用）
+    const movieEvents = interpolateMovieEvents(skels, rlog);
     const retro = retroHours(rlog);
+    const mHours = movieHours(movieEvents);
+    for (let i = 0; i < 24; i++) retro[i] += mHours[i];
     const liveTotal = hs.study.reduce((a, b) => a + b, 0);
     const retroTotal = retro.reduce((a, b) => a + b, 0);
     if (!liveTotal && !retroTotal) {
@@ -302,7 +308,7 @@ async function renderRecentTab(
     }
     const NOTES = {
       live: '学習が進む時間帯（完了検知でその時刻を記録・自動更新）',
-      retro: '受験の時間帯（詳細ログ＝テスト/レポートの受験日時。導入以前も含む実測・動画の視聴時刻は含まない）',
+      retro: `受験の時間帯（詳細ログ＝テスト/レポートの受験日時。導入以前も含む実測${movieEvents.length ? `＋動画${movieEvents.length}本を前後の受験時刻から補間` : '・動画の視聴時刻は前後の受験間隔が整合する場合のみ補間'}）`,
     } as const;
     let hmode: 'live' | 'retro' = liveTotal > 0 ? 'live' : 'retro';
     const note = h('div', { class: 'zss-tsub-note' }, []);

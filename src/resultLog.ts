@@ -8,9 +8,11 @@
 // 【レート配慮】結果ページは教材1件=1GET。1件ごとに待機を挟み（約2件/秒）、1回の実行に上限を設ける。
 //   結果は不変のため合格済みエントリは永続キャッシュし、二度と再取得しない（2回目以降は新規完了分のみ）。
 import { fetchMyCourses, fetchCoursesBatch, fetchCourseChapters } from './courseApi';
+import type { ChapterSkels, SkelSection } from './movieInterp';
 
 const KEY_LOG = 'zss:resultLog'; // Record<sectionId, ResultEntry>（フラット構造＝バックアップの統合が単純）
 const KEY_AT = 'zss:resultLogAt'; // 最終収集時刻 epoch ms
+const KEY_SKEL = 'zss:chapterSkels'; // 章の教材並び（動画時刻の補間用・スキャン時に副産物として保存＝追加リクエスト0）
 
 export type ResultKind = 'test' | 'report';
 export interface ResultEntry {
@@ -93,6 +95,17 @@ async function saveMap(m: LogMap): Promise<void> {
 export async function getResultLog(): Promise<ResultEntry[]> {
   return Object.values(await loadMap());
 }
+/** 章スケルトン（教材の並び・動画秒数）。動画視聴時刻の補間に使う。 */
+export async function getChapterSkels(): Promise<ChapterSkels> {
+  if (!hasStorage()) return {};
+  try {
+    const r = await chrome.storage.local.get([KEY_SKEL]);
+    return (r?.[KEY_SKEL] as ChapterSkels) ?? {};
+  } catch {
+    return {};
+  }
+}
+
 /** 最終収集時刻（epoch ms）。未収集は null。 */
 export async function getResultLogAt(): Promise<number | null> {
   if (!hasStorage()) return null;
@@ -134,12 +147,25 @@ export async function collectResultLog(onProgress?: (p: CollectProgress) => void
     }))
     .filter((j) => j.chapterIds.length);
   const cands: { courseId: number; chapterId: number; sectionId: number; kind: ResultKind }[] = [];
+  const skels: ChapterSkels = {};
   let scanned = 0;
   for (const j of jobs) {
     onProgress?.({ phase: 'scan', done: ++scanned, total: jobs.length });
     const chs = await fetchCourseChapters(j.courseId, j.chapterIds);
     await sleep(SCAN_DELAY_MS);
     for (const ch of chs) {
+      // 章スケルトン（動画補間用・追加リクエスト0の副産物）。アンカーと動画が両方ある章のみ。
+      const skSections: SkelSection[] = ch.sections
+        .filter((s) => s.id)
+        .map((s) => ({
+          id: s.id!,
+          kind: s.resource_type === 'movie' ? 'movie' : s.resource_type === 'evaluation_test' || s.resource_type === 'evaluation_report' ? 'anchor' : 'other',
+          len: s.resource_type === 'movie' ? s.length ?? 0 : 0,
+          passed: s.passed,
+        }));
+      if (skSections.some((s) => s.kind === 'anchor') && skSections.some((s) => s.kind === 'movie' && s.passed)) {
+        skels[String(ch.id)] = { courseId: j.courseId, sections: skSections };
+      }
       for (const s of ch.sections) {
         const kind: ResultKind | null =
           s.resource_type === 'evaluation_test' ? 'test' : s.resource_type === 'evaluation_report' ? 'report' : null;
@@ -151,6 +177,13 @@ export async function collectResultLog(onProgress?: (p: CollectProgress) => void
         cands.push({ courseId: j.courseId, chapterId: ch.id, sectionId: s.id, kind });
       }
     }
+  }
+  // スケルトン保存（既存とマージ・上限400章で古いものから破棄はせず単純マージ＝カリキュラム規模で十分小さい）
+  try {
+    const prevSk = await getChapterSkels();
+    await chrome.storage.local.set({ [KEY_SKEL]: { ...prevSk, ...skels } });
+  } catch {
+    /* ignore */
   }
   // 2) 結果ページを1件ずつ取得（スロットル・上限・途中保存）
   const todo = cands.slice(0, MAX_PER_RUN);
