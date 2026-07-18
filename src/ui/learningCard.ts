@@ -37,7 +37,7 @@ import { renderDataManage } from './dataManage';
 import { renderResultLogFold } from './resultLogUi';
 import { getTimerEnabled, setTimerEnabled } from '../testTimer';
 import { getResultLog } from '../resultLog';
-import { retroSections } from '../resultStats';
+import { retroSections, retroHours } from '../resultStats';
 import type { CourseMaterial } from '../courseApi';
 
 /** 統合「学習数」カード。常時表示はコンパクトな要点のみ、詳細（グラフ）はタブで直下に展開。 */
@@ -288,14 +288,54 @@ async function renderRecentTab(
     return h('div', {}, [h('div', { class: 'zss-tsub' }, [seg]), trendChart]);
   };
 
+  // 時間帯: ソース切替（完了検知=ライブ実測 / 受験記録=詳細ログの遡及実測）。
+  // 導入後の提出は両方に記録されるため合算はしない（二重計上防止）。
   const buildHour = async (): Promise<HTMLElement> => {
-    const hs = await getHourStats();
-    return hs.study.reduce((a, b) => a + b, 0) > 0
-      ? h('div', {}, [
-          h('div', { class: 'zss-tsub-note' }, ['学習が進む時間帯（完了検知でその時刻を記録・自動更新）']),
-          wrapChart(renderHourBars(hs.study, tip)),
-        ])
-      : h('div', { class: 'zss-empty' }, ['PCで動画/テスト等を完了すると、その時刻を記録します（数回で傾向が出ます）。']);
+    const [hs, rlog] = await Promise.all([getHourStats(), getResultLog().catch(() => [])]);
+    const retro = retroHours(rlog);
+    const liveTotal = hs.study.reduce((a, b) => a + b, 0);
+    const retroTotal = retro.reduce((a, b) => a + b, 0);
+    if (!liveTotal && !retroTotal) {
+      return h('div', { class: 'zss-empty' }, [
+        'PCで動画/テスト等を完了すると、その時刻を記録します（数回で傾向が出ます）。カード下部の「詳細ログの抽出」を実行すると、過去の受験時刻からも表示できます。',
+      ]);
+    }
+    const NOTES = {
+      live: '学習が進む時間帯（完了検知でその時刻を記録・自動更新）',
+      retro: '受験の時間帯（詳細ログ＝テスト/レポートの受験日時。導入以前も含む実測・動画の視聴時刻は含まない）',
+    } as const;
+    let hmode: 'live' | 'retro' = liveTotal > 0 ? 'live' : 'retro';
+    const note = h('div', { class: 'zss-tsub-note' }, []);
+    const chartWrap = h('div', {}, []);
+    const seg = h('div', { class: 'zss-seg' }, []);
+    const hmodes: ['live' | 'retro', string][] = [['live', '完了検知'], ['retro', '受験記録']];
+    const btns: HTMLElement[] = [];
+    const apply = (): void => {
+      btns.forEach((x, i) => x.classList.toggle('on', hmodes[i][0] === hmode));
+      note.textContent = NOTES[hmode];
+      const dataArr = hmode === 'live' ? hs.study : retro;
+      chartWrap.textContent = '';
+      chartWrap.appendChild(
+        dataArr.reduce((a, b) => a + b, 0) > 0
+          ? wrapChart(renderHourBars(dataArr, tip))
+          : h('div', { class: 'zss-empty' }, [
+              hmode === 'retro'
+                ? 'カード下部の「詳細ログの抽出」を実行すると、過去の受験時刻から表示できます。'
+                : 'PCで動画/テスト等を完了すると、その時刻を記録します（数回で傾向が出ます）。',
+            ])
+      );
+    };
+    for (const [m, label] of hmodes) {
+      const b = h('button', {}, [label]);
+      b.addEventListener('click', () => {
+        hmode = m;
+        apply();
+      });
+      btns.push(b);
+      seg.appendChild(b);
+    }
+    apply();
+    return h('div', {}, [h('div', { class: 'zss-tsub' }, [seg]), note, chartWrap]);
   };
 
   const showView = async (v: string): Promise<void> => {
