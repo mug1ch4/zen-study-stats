@@ -90,11 +90,32 @@ export function renderLearningCard(data: LearningAmounts, opts?: { defaultTab?: 
   const foot = card.querySelector('.zss-foot');
   card.insertBefore(details, foot);
   card.insertBefore(renderNotifyLog(), foot);
+  card.insertBefore(renderResultLogFold(renderInsightSection), foot); // 重要機能なので先頭・アクセント表示
   card.insertBefore(renderDisplaySettings(), foot);
-  card.insertBefore(renderResultLogFold(renderInsightSection), foot);
   card.insertBefore(renderDataManage(), foot);
 
   return card;
+}
+
+/** 詳細ログ未収集時の誘導カード（分析タブ）: クリックで抽出フォールドへスクロール＆展開。 */
+function renderRetroCta(pane: HTMLElement): HTMLElement {
+  const btn = h('button', { class: 'zss-rl-cta-btn' }, ['詳細ログの抽出へ']) as HTMLButtonElement;
+  btn.addEventListener('click', () => {
+    const root = pane.getRootNode() as ShadowRoot;
+    const fold = root.querySelector?.('details.zss-rl') as HTMLDetailsElement | null;
+    if (!fold) return;
+    fold.open = true;
+    fold.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    fold.classList.add('flash');
+    window.setTimeout(() => fold.classList.remove('flash'), 2400);
+  });
+  return h('div', { class: 'zss-rl-cta' }, [
+    h('div', {}, [
+      h('b', {}, ['過去の学習記録を復元できます。']),
+      ' テスト/レポートの受験日時（導入以前も含む）を一度収集すると、日別の学習時刻・初回合格率・レポート得点率・動画視聴時刻の補間など実測ベースの分析が有効になります。',
+    ]),
+    btn,
+  ]);
 }
 
 /** 表示設定: 所要時間タイマーのON/OFF（今後の表示系オプションの置き場）。 */
@@ -676,6 +697,8 @@ async function renderAnalysisTab(
 
     pane.textContent = '';
     if (nudges.length) pane.appendChild(renderMotivation(nudges.slice(0, 2)));
+    // 詳細ログ未収集なら誘導（過去の実測分析が眠っていることを分析タブで直接知らせる）
+    if (!resultLog.length) pane.appendChild(renderRetroCta(pane));
     pane.appendChild(h('div', { class: 'zss-analysis-head' }, ['あなたの学習傾向']));
     pane.appendChild(h('div', { class: 'zss-analysis-sub' }, [`記録 ${merged.length}日ぶんから分析（データが増えるほど精度が上がります）`]));
     for (const sec of sections) pane.appendChild(renderInsightSection(sec));

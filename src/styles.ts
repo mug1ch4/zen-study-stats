@@ -246,6 +246,17 @@ export const CSS = `
 .zss-setting-row { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--ink); line-height: 1.55; cursor: pointer; }
 .zss-setting-row input { margin-top: 2px; accent-color: var(--primary); }
 
+/* --- 詳細ログの抽出（重要機能の強調） --- */
+.zss-dm.zss-rl { border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 6%, var(--surface)); }
+.zss-rl > summary { font-weight: 700; color: var(--primary-strong); }
+.zss-rl-chip { margin-left: 8px; font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+.zss-rl-chip.todo { background: color-mix(in srgb, #d9822b 16%, var(--surface)); color: #d9822b; }
+.zss-rl-chip.ok { background: color-mix(in srgb, var(--success) 14%, var(--surface)); color: var(--success); }
+.zss-rl.flash { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 45%, transparent); transition: box-shadow .3s; }
+.zss-rl-cta { display: flex; gap: 10px; align-items: center; border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border)); background: color-mix(in srgb, var(--primary) 8%, var(--surface)); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; color: var(--ink); line-height: 1.55; }
+.zss-rl-cta-btn { flex: none; background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.zss-rl-cta-btn:hover { background: var(--primary-strong); }
+
 /* --- 今日のデイリークエスト --- */
 .zss-quest {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;

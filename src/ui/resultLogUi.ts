@@ -14,14 +14,23 @@ function hasStorage(): boolean {
 /** カード末尾に置く抽出フォールド。renderSection は learningCard の insight レンダラを注入。 */
 export function renderResultLogFold(renderSection: (s: Section) => HTMLElement): HTMLElement {
   if (!hasStorage()) {
-    return h('details', { class: 'zss-fold zss-dm' }, [
-      h('summary', {}, ['詳細ログの抽出（受験記録の遡及復元）']),
+    return h('details', { class: 'zss-fold zss-dm zss-rl' }, [
+      h('summary', {}, ['📥 詳細ログの抽出（受験記録の遡及復元）']),
       h('p', { class: 'zss-dm-note' }, ['拡張機能として ZEN Study 上で動作しているときに利用できます（このデモでは無効です）。']),
     ]);
   }
   const status = h('div', { class: 'zss-dm-status' }, []);
   const statsBody = h('div', {}, []);
   const btn = h('button', { class: 'zss-dm-btn' }, ['抽出を開始']) as HTMLButtonElement;
+  // ステータスチップ（未実行=要注目 / 収集済み=件数）。開かなくても状態が見える。
+  const chip = h('span', { class: 'zss-rl-chip' }, []);
+  const refreshChip = async (): Promise<void> => {
+    const entries = await getResultLog().catch(() => []);
+    chip.textContent = entries.length ? `収集済み ${entries.length}件` : '未実行・推奨';
+    chip.classList.remove('ok', 'todo');
+    chip.classList.add(entries.length ? 'ok' : 'todo');
+  };
+  void refreshChip();
 
   const renderStats = async (): Promise<void> => {
     const [entries, at] = await Promise.all([getResultLog(), getResultLogAt()]);
@@ -52,6 +61,7 @@ export function renderResultLogFold(renderSection: (s: Section) => HTMLElement):
           r.candidates === 0
             ? `新規の受験記録はありません（収集済み ${r.totalEntries}件）。`
             : `完了: ${r.ok}件を取得（累計 ${r.totalEntries}件${r.failed ? `・失敗 ${r.failed}` : ''}）。${r.truncated ? '上限に達したため、もう一度実行すると続きを取得します。' : ''}`;
+        await refreshChip();
         await renderStats();
       })
       .catch((e) => {
@@ -64,8 +74,8 @@ export function renderResultLogFold(renderSection: (s: Section) => HTMLElement):
       });
   });
 
-  const det = h('details', { class: 'zss-fold zss-dm' }, [
-    h('summary', {}, ['詳細ログの抽出（受験記録の遡及復元）']),
+  const det = h('details', { class: 'zss-fold zss-dm zss-rl' }, [
+    h('summary', {}, ['📥 詳細ログの抽出（受験記録の遡及復元）', chip]),
     h('p', { class: 'zss-dm-note' }, [
       '受験済みテスト/レポートの結果画面から、合否・点数・受験日時を収集します。拡張の導入以前の記録も復元でき、アクティブ時間帯・初回合格率・過去の教科別進度などの実測分析ができます。',
     ]),
