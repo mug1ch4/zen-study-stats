@@ -182,30 +182,49 @@ export function stopTimer(flush: boolean): void {
   removeWidget();
 }
 
-/** 提出検知（observer 経由）。現在計測中の教材なら確定記録して true。 */
-export function notifyTimerSubmission(resourceId: number): boolean {
-  if (!running || !Number.isFinite(resourceId) || running.sectionId !== resourceId) return false;
-  const r = running;
-  if (tickId) {
-    window.clearInterval(tickId);
-    tickId = 0;
-  }
-  running = null;
-  const min = r.sec / 60;
-  void deleteAccEntry(r.sectionId);
-  if (min >= MIN_RECORD_MIN && min <= MAX_RECORD_MIN) {
-    void recordWorkTime(r.courseId, r.kind, min, r.q ?? 1);
-    if (label && stateEl) {
-      label.textContent = fmt(r.sec);
-      stateEl.textContent = ' 提出を検知 — 所要時間を記録しました';
+/** 提出検知（observer 経由）。計測中ならその累計、そうでなくても永続蓄積(acc)にあれば
+ *  そこから確定記録する（別タブでの提出・ルート検知漏れ時のセーフティネット）。記録したら true。 */
+export async function notifyTimerSubmission(resourceId: number): Promise<boolean> {
+  if (!Number.isFinite(resourceId)) return false;
+  // 1) いま計測中の教材
+  if (running && running.sectionId === resourceId) {
+    const r = running;
+    if (tickId) {
+      window.clearInterval(tickId);
+      tickId = 0;
     }
+    running = null;
+    const min = r.sec / 60;
+    void deleteAccEntry(r.sectionId);
+    if (min >= MIN_RECORD_MIN && min <= MAX_RECORD_MIN) {
+      await recordWorkTime(r.courseId, r.kind, min, r.q ?? 1);
+      if (label && stateEl) {
+        label.textContent = fmt(r.sec);
+        stateEl.textContent = ' 提出を検知 — 所要時間を記録しました';
+      }
+    }
+    const w = widget;
+    widget = null; // 以後の mount と切り離し
+    window.setTimeout(() => w?.remove(), 6000);
+    label = null;
+    stateEl = null;
+    return true;
   }
-  const w = widget;
-  widget = null; // 以後の mount と切り離し
-  window.setTimeout(() => w?.remove(), 6000);
-  label = null;
-  stateEl = null;
-  return true;
+  // 2) 計測中でなくても、過去の蓄積が保存されていれば確定（この画面以外からの提出）
+  try {
+    const acc = await loadAcc();
+    const e = acc[String(resourceId)];
+    if (!e) return false;
+    await deleteAccEntry(resourceId);
+    const min = e.sec / 60;
+    if (min >= MIN_RECORD_MIN && min <= MAX_RECORD_MIN) {
+      await recordWorkTime(e.courseId, e.kind, min, e.q ?? 1);
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
 }
 
 /** ルート変化・起動時に呼ぶ。対象ページなら計測開始、離脱なら保存して停止。 */

@@ -62,8 +62,21 @@ function sync(): void {
 }
 
 // --- SPA ルート変化の検知 ---
+// 【重要】content script は ISOLATED world のため、ここで history.pushState をパッチしても
+// ページ本体(MAIN world)の呼び出しは捕捉できない（popstate だけは実DOMイベントなので届く）。
+// よって主検知は MutationObserver での href 変化監視（emitIfHrefChanged）。
+// pushState パッチは拡張自身・デバッグ経由の遷移用の補助として残す。
+let lastHref = location.href;
+function emitIfHrefChanged(): void {
+  if (location.href === lastHref) return;
+  lastHref = location.href;
+  window.dispatchEvent(new Event('zss:locationchange'));
+}
 function patchHistory(): void {
-  const emit = () => window.dispatchEvent(new Event('zss:locationchange'));
+  const emit = () => {
+    lastHref = location.href;
+    window.dispatchEvent(new Event('zss:locationchange'));
+  };
   for (const m of ['pushState', 'replaceState'] as const) {
     const orig = history[m];
     history[m] = function (this: History, ...args: Parameters<History['pushState']>) {
@@ -99,6 +112,7 @@ function observeDom(): void {
     // コース/チャプター画面の残りサマリ（self-guardで対象ページのみ動く）＋ダークトグルの再設置。
     // ナビは下スクロールで再描画されトグルが消えるため、消えた時だけ即再設置（ポーリング廃止）。
     if (started) {
+      emitIfHrefChanged(); // SPA遷移の主検知（MAIN world の pushState は本パッチでは見えないため）
       window.clearTimeout(sumDebounce);
       sumDebounce = window.setTimeout(() => {
         void ensureCourseSummary();
@@ -228,10 +242,16 @@ function listenCompletions(): void {
       if (DEV_NOTIFY) showToast(`🔎 [dev] 完了通信を検知: course ${d.courseId} / ch ${d.chapterId}`, { icon: '🔎', durationMs: 9000, log: false });
       const dd = d as { courseId?: string; chapterId?: string; resource?: string; resourceId?: string };
       const idOk = (s?: string): boolean => !!s && NUMERIC.test(s);
-      // タイマー計測中の教材の提出なら、実測の所要時間を確定記録（間隔近似より正確・二重計上は防ぐ）
-      const timerHandled = idOk(dd.resourceId) ? notifyTimerSubmission(+dd.resourceId!) : false;
       if (idOk(dd.courseId) && idOk(dd.chapterId) && idOk(dd.resourceId) && dd.resource && RESOURCE_OK.test(dd.resource)) {
-        pendingEv = { courseId: +dd.courseId!, chapterId: +dd.chapterId!, resource: dd.resource, resourceId: +dd.resourceId!, ts: Date.now(), timerHandled };
+        pendingEv = { courseId: +dd.courseId!, chapterId: +dd.chapterId!, resource: dd.resource, resourceId: +dd.resourceId!, ts: Date.now(), timerHandled: false };
+      }
+      // タイマー実測（計測中 or 永続蓄積）があれば確定記録し、間隔近似との二重計上を防ぐ。
+      // 非同期だが settle の1.5秒デバウンスより十分早く解決する。
+      if (idOk(dd.resourceId)) {
+        const ev = pendingEv;
+        void notifyTimerSubmission(+dd.resourceId!).then((handled) => {
+          if (handled && ev) ev.timerHandled = true;
+        });
       }
       onCompletion();
     }

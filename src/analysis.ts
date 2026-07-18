@@ -276,7 +276,7 @@ export function workTimeTendency(
   if (!rows.length) {
     return {
       title: '所要時間の実測',
-      insights: [{ kind: 'note', text: 'PCでテスト/レポートを完了すると、直前の完了からの間隔で所要時間を自動実測します（教科別の残り時間換算の精度が上がります）。' }],
+      insights: [{ kind: 'note', text: '未提出のテスト/レポート画面のタイマー（提出で自動記録・教材ごと累計）と、完了間隔からの推定で所要時間を実測します。PCでテスト/レポートを提出するとここに貯まります（教科別の残り時間換算の精度が上がります）。' }],
     };
   }
   rows.sort((a, b) => b.n - a.n);
@@ -286,7 +286,7 @@ export function workTimeTendency(
   if (allRep.n) overall.push(`レポート ${fmt(allRep)}`);
   insights.push({ kind: 'good', text: `全体: ${overall.join(' / ')}。` });
   for (const r of rows.slice(0, 8)) insights.push({ kind: 'note', text: `${r.title}: ${r.parts.join(' / ')}` });
-  insights.push({ kind: 'note', text: '※直前の完了からの間隔（0.5〜45分のみ採用・確定完了時のみ）による近似。サンプルが増えるほど教科別シェアの時間換算に反映されます。' });
+  insights.push({ kind: 'note', text: '※タイマー実測（未提出画面の累計表示時間・提出時に記録）を優先し、無い場合は完了間隔（0.5〜45分のみ採用）で近似。サンプルが増えるほど教科別シェアの時間換算に反映されます。' });
   return { title: '所要時間の実測', insights };
 }
 
