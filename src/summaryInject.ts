@@ -107,23 +107,40 @@ function fillBanner(box: HTMLElement, r: RemainingWork, kind: 'course' | 'chapte
   );
 }
 
-/** 見出しを含むカードの挿入位置を特定（未描画なら null）。 */
-function findSpot(info: PathInfo): HTMLElement | null {
+interface Spot {
+  container: HTMLElement; // host を firstChild として挿入する親
+  sticky: boolean; // スクロールコンテナ直下＝上部に張り付かせる（動画横メニュー等）
+}
+/** 挿入位置を特定（未描画なら null）。見出しカードの祖先にスクロールコンテナがあれば、
+ *  そのコンテナ直下の先頭に sticky 配置（スクロールで見切れず上部に張り付く）。 */
+function findSpot(info: PathInfo): Spot | null {
   const heading = findHeading(info.kind);
   if (!heading) return null;
-  return cardAncestor(heading) ?? heading.parentElement ?? null;
+  const card = cardAncestor(heading) ?? heading.parentElement;
+  if (!card) return null;
+  // カードの祖先を辿り、実際にスクロールする overflow auto/scroll のコンテナを探す。
+  let n: HTMLElement | null = card.parentElement;
+  for (let i = 0; i < 8 && n; i++) {
+    const oy = getComputedStyle(n).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight + 20) {
+      return { container: n, sticky: true };
+    }
+    n = n.parentElement;
+  }
+  return { container: card, sticky: false };
 }
 
 /** ホスト（Shadow DOM）を作って挿入し、内部の box を返す。 */
-function mountHost(container: HTMLElement, info: PathInfo): { host: HTMLElement; box: HTMLElement } {
+function mountHost(spot: Spot, info: PathInfo): { host: HTMLElement; box: HTMLElement } {
   const host = document.createElement('div');
   host.id = HOST_ID;
   host.setAttribute('data-key', info.key);
-  host.style.display = 'block';
+  // sticky: スクロールコンテナ上部に張り付く（動画再生中の横メニューで見切れない）。z-indexで前面に。
+  host.style.cssText = spot.sticky ? 'display:block;position:sticky;top:0;z-index:30;' : 'display:block;';
   const root = host.attachShadow({ mode: 'open' });
   const box = bannerBox();
   root.appendChild(box);
-  container.insertBefore(host, container.firstChild);
+  spot.container.insertBefore(host, spot.container.firstChild);
   return { host, box };
 }
 
