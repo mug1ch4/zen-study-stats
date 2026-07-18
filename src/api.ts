@@ -86,7 +86,14 @@ export function fetchMonthlyReport(year: number, month: number): Promise<Monthly
   return getJSON<MonthlyReportDetail>(`/v2/dashboard/report_progresses/monthly/${year}/${month}`);
 }
 
-/** レポート進捗（月別の締切・総数・完了数、年度末締切）。 */
+/** レポート進捗（月別の締切・総数・完了数、年度末締切）。
+ *  【正規化の前提（API仕様依存・2026-07 実データで確認した範囲）】
+ *  - monthly_summaries はサーバ側で月に分割済みで、章は月間で重複しない（各月「第N回」の別章）。
+ *    → totalReports/passedReports は単純合算で年度総数になる、という前提。
+ *  - total_chapter_count は免除(exempted)章も含みうる（免除章を持つアカウントでの検証は未了）。
+ *  - 年度境界: monthly_summaries は当年度ぶんのみ返る想定（year フィールドを保持しているので
+ *    仮に複数年度が混ざっても deadlines.ts 側は締切日でソートし月キーは year-month で扱う）。
+ *  前提が崩れる兆候（合算＞年度総数など）を見たら、monthly 詳細API の章ID集合で照合すること。 */
 export async function fetchReportProgresses(): Promise<ReportProgress> {
   if (mockReport) return mockReport;
   const j = await getJSON<RawReportProgress>('/v2/dashboard/report_progresses?service=basic');

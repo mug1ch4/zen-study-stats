@@ -34,11 +34,16 @@ export function computeCourseDeadlineRisks(
   groups: DeadlineGroupInput[],
   paces: Map<number, CoursePace>
 ): CourseDeadlineRisk[] {
-  // 教科ごとに (daysLeft, 残教材) を締切順で集める
+  // 教科ごとに (daysLeft, 残教材) を締切順で集める。
+  // 同一章が複数の締切グループに現れてもAPI仕様依存で二重計上しないよう、章IDで重複排除
+  // （締切昇順に走査するので、最初＝最も早い締切の出現を採用）。
+  const seenChapters = new Set<number>();
   const byCourse = new Map<number, { title: string; items: { daysLeft: number; remaining: number }[] }>();
   for (const g of [...groups].sort((a, b) => a.daysLeft - b.daysLeft)) {
     for (const ch of g.chapters) {
       if (ch.exempted) continue;
+      if (seenChapters.has(ch.chapter_id)) continue;
+      seenChapters.add(ch.chapter_id);
       const rem = Math.max(0, ch.total_count - ch.passed_count);
       if (rem <= 0) continue;
       const cur = byCourse.get(ch.course_id) ?? { title: ch.course_title, items: [] };

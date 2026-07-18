@@ -74,4 +74,16 @@ describe('computeCourseDeadlineRisks', () => {
     const groups: DeadlineGroupInput[] = [{ daysLeft: 10, chapters: [ch(1, '体育', 5, 5)] }];
     expect(computeCourseDeadlineRisks(groups, new Map([pace(1, 1)]))).toHaveLength(0);
   });
+
+  it('同一章が複数の締切グループに現れても二重計上しない（早い締切の出現を採用）', () => {
+    const dup = ch(1, '数学', 10, 4); // chapter_id は course_id*100+total で同一になる
+    const groups: DeadlineGroupInput[] = [
+      { daysLeft: 20, chapters: [{ ...dup }] },
+      { daysLeft: 5, chapters: [{ ...dup }] },
+    ];
+    const out = computeCourseDeadlineRisks(groups, new Map([pace(1, 1)]));
+    expect(out).toHaveLength(1);
+    expect(out[0].remaining).toBe(6); // 12ではなく6（重複排除）
+    expect(out[0].daysLeft).toBe(5); // 早い方の締切で判定
+  });
 });

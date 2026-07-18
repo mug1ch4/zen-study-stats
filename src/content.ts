@@ -148,7 +148,25 @@ async function maybeRecordWorkTime(ev: CompletionEv, delta: number): Promise<voi
 
 // 完了を"確定"させる。集計API(passed_materials)はサーバ側の更新にラグがあり、
 // 検知直後は増分0のことがある（動画passed直後など）。増分0なら数秒あけて数回リトライする。
+// 【信頼境界】completion メッセージはページ上のJSから偽造可能なので一切信用しない。
+// ここで GET により実際の passed 増分を確認できた時だけ記録する（メッセージ＝UI更新トリガーに過ぎない）。
+let settleInflight = false;
+let lastSettleAt = 0;
 async function settleCompletion(attempt: number): Promise<void> {
+  if (settleInflight) {
+    // 直列化: イベント由来と周期再同期が同時に走って同じ増分を二重計上しないよう1本に絞る。
+    window.setTimeout(() => void settleCompletion(attempt), 1200);
+    return;
+  }
+  settleInflight = true;
+  lastSettleAt = Date.now();
+  try {
+    await settleCompletionBody(attempt);
+  } finally {
+    settleInflight = false;
+  }
+}
+async function settleCompletionBody(attempt: number): Promise<void> {
   try {
     const mt = await fetchMaterialTotals({ fresh: true }); // 実際の passed/total（キャッシュ不可・最新必須）
     const prev = await getLastPassed();
@@ -190,27 +208,48 @@ function onCompletion(): void {
   window.clearTimeout(compDebounce);
   compDebounce = window.setTimeout(() => void settleCompletion(0), 1500);
 }
+let observerReady = false;
+const NUMERIC = /^\d{1,10}$/;
+const RESOURCE_OK = /^[a-z_]{3,30}$/;
 function listenCompletions(): void {
   window.addEventListener('message', (e) => {
-    // e.source は MAIN↔ISOLATED で一致しないことがあるため判定に使わない。__zss マーカーで識別。
+    // 検証: 同一オリジン（教材iframeも www.nnn.ed.nico）以外は無視。
+    // e.source は MAIN↔ISOLATED で一致しない・iframe発もあるため判定に使えず、__zss マーカー＋型検証で識別。
+    // なお completion は偽造可能な"トリガー"として扱い、実記録は settle 側の GET 照合（passed増分）でのみ確定する。
+    if (e.origin !== window.location.origin) return;
     const d = e.data as { __zss?: string; courseId?: string; chapterId?: string } | null;
     if (!d || typeof d !== 'object') return;
     if (d.__zss === 'observer-ready') {
+      observerReady = true;
       if (DEV_NOTIFY) showToast('🟢 [dev] observer 稼働中（完了検知の準備OK）', { icon: '🟢', durationMs: 8000, log: false });
       return;
     }
     if (d.__zss === 'completion') {
       if (DEV_NOTIFY) showToast(`🔎 [dev] 完了通信を検知: course ${d.courseId} / ch ${d.chapterId}`, { icon: '🔎', durationMs: 9000, log: false });
       const dd = d as { courseId?: string; chapterId?: string; resource?: string; resourceId?: string };
+      const idOk = (s?: string): boolean => !!s && NUMERIC.test(s);
       // タイマー計測中の教材の提出なら、実測の所要時間を確定記録（間隔近似より正確・二重計上は防ぐ）
-      const timerHandled = dd.resourceId ? notifyTimerSubmission(+dd.resourceId) : false;
-      if (dd.courseId && dd.chapterId && dd.resource && dd.resourceId) {
-        pendingEv = { courseId: +dd.courseId, chapterId: +dd.chapterId, resource: dd.resource, resourceId: +dd.resourceId, ts: Date.now(), timerHandled };
+      const timerHandled = idOk(dd.resourceId) ? notifyTimerSubmission(+dd.resourceId!) : false;
+      if (idOk(dd.courseId) && idOk(dd.chapterId) && idOk(dd.resourceId) && dd.resource && RESOURCE_OK.test(dd.resource)) {
+        pendingEv = { courseId: +dd.courseId!, chapterId: +dd.chapterId!, resource: dd.resource, resourceId: +dd.resourceId!, ts: Date.now(), timerHandled };
       }
       onCompletion();
     }
   });
-  if (DEV_NOTIFY) window.postMessage({ __zss: 'ping' }, window.location.origin); // observer 起動確認（応答→🟢トースト）
+  window.postMessage({ __zss: 'ping' }, window.location.origin); // observer 生存確認（応答で observerReady）
+}
+
+// フック不全へのフォールバック: 表示中のタブで定期的に passed を GET 照合し、
+// 検知漏れ（サイト側の fetch 再代入・他拡張との競合・パターン変化）があっても追いつく。
+// observer の生存が確認できない場合は間隔を詰める。イベント直後(60秒以内)はスキップ。
+function startResyncLoop(): void {
+  lastSettleAt = Date.now(); // 起動直後は日次スナップが走るため、初回照合は間隔経過後から
+  window.setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    const interval = observerReady ? 5 * 60_000 : 2 * 60_000;
+    if (Date.now() - lastSettleAt < Math.max(60_000, interval)) return;
+    void settleCompletion(999); // 単発照合（増分があれば通常フローで記録・リトライはしない）
+  }, 60_000);
 }
 
 function onRouteChange(): void {
@@ -280,6 +319,7 @@ function startup(): void {
   });
   patchHistory();
   listenCompletions(); // 完了検知（observer.js からの通知）を購読
+  startResyncLoop(); // フック不全でも追いつく定期GET照合（表示中のみ・低頻度）
   installTimerFlushHooks(); // タイマー蓄積のページ離脱時保存
   void ensureTestTimer(); // 直接テストページを開いた場合の計測開始
   window.addEventListener('zss:locationchange', onRouteChange);
