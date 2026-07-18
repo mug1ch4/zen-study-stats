@@ -135,8 +135,10 @@ function mountHost(spot: Spot, info: PathInfo): { host: HTMLElement; box: HTMLEl
   const host = document.createElement('div');
   host.id = HOST_ID;
   host.setAttribute('data-key', info.key);
-  // sticky: スクロールコンテナ上部に張り付く（動画再生中の横メニューで見切れない）。z-indexで前面に。
-  host.style.cssText = spot.sticky ? 'display:block;position:sticky;top:0;z-index:30;' : 'display:block;';
+  // sticky: スクロールコンテナ上部に張り付く（動画再生中の横メニューで見切れない）。
+  // 横メニュー内の選択中項目が z-index:10001 を持つため、それを確実に上回る値で前面固定。
+  // host はスクロールコンテナ内＝モーダル/プレイヤー本体とは stacking context が分離するので過大でも安全。
+  host.style.cssText = spot.sticky ? 'display:block;position:sticky;top:0;z-index:100000;' : 'display:block;';
   const root = host.attachShadow({ mode: 'open' });
   const box = bannerBox();
   root.appendChild(box);
