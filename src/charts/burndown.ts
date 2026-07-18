@@ -155,14 +155,16 @@ export function renderCourseBurndown(c: CourseBurn, tip: Tooltip): SVGElement {
   return svg;
 }
 
-/** 教材消化バーンダウン: 日次実績(再構成)＋曜日/祝日考慮の予測カーブ＋必要ライン＋（任意）目標日ライン。 */
-export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, targetDate?: Date | null): SVGElement {
+/** 教材消化バーンダウン: 日次実績(再構成)＋曜日/祝日考慮の予測カーブ＋必要ライン＋（任意）目標日ライン。
+ *  retroActual: 抽出ログ（受験アンカー・必修のみ）からの後方外挿。materialHistory が薄い過去を点線で補う。 */
+export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, targetDate?: Date | null, retroActual?: Pt[]): SVGElement {
   const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': '教材消化バーンダウン' });
   const total = Math.max(1, p.total);
-  // x範囲: 直近実績の開始 〜 締切
+  // x範囲: 実績（直接観測＋遡及推定）の最古 〜 締切。
   // 基点は「学習上の今日」(5:00 AM JST境界)。予測(モンテカルロ)の today と一致させ、帯のズレを防ぐ。
   const nowAnchor = zenToday().getTime();
-  const t0 = actual.length ? parseDate(actual[0].date).getTime() : nowAnchor;
+  const earliestDates = [...actual, ...(retroActual ?? [])].map((c) => parseDate(c.date).getTime());
+  const t0 = earliestDates.length ? Math.min(...earliestDates) : nowAnchor;
   const t1 = p.finalDeadline.getTime();
   const span = Math.max(DAY, t1 - t0);
   const x = (t: number) => L + Math.max(0, Math.min(1, (t - t0) / span)) * PLOT_W;
@@ -292,7 +294,16 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, target
     svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));
   }
 
-  // 実績（日次・再構成）
+  // 抽出ログ由来の後方外挿（必修の受験アンカー＋動画補間・推定・点線）。
+  // materialHistory が薄い過去を埋める（導入以前も含む）。直接観測の実線の下に薄く。
+  if (retroActual && retroActual.length > 1) {
+    const rp = retroActual.filter((c) => parseDate(c.date).getTime() <= t1);
+    if (rp.length > 1) {
+      const pts = rp.map((c) => `${x(parseDate(c.date).getTime()).toFixed(1)},${y(c.remaining).toFixed(1)}`).join(' ');
+      svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 1.5, 'stroke-dasharray': '3 3', opacity: 0.5, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));
+    }
+  }
+  // 実績（日次・再構成＝materialHistory 直接観測）
   if (actual.length > 1) {
     const pts = actual.map((c) => `${x(parseDate(c.date).getTime()).toFixed(1)},${y(c.remaining).toFixed(1)}`).join(' ');
     svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));

@@ -21,7 +21,7 @@ import { countUp } from '../anim';
 import { notifyProgress, notifyQuest } from '../notify';
 import { getNotifyLog } from './toast';
 import { fetchReportProgresses } from '../api';
-import { fetchCourseMaterials, fetchElectiveCourses, type ElectiveCourse } from '../courseApi';
+import { fetchCourseMaterials, fetchElectiveCourses, getRequiredCourseIds, type ElectiveCourse } from '../courseApi';
 import { getStudyMode, setStudyMode, snapshotElectivePassed, getElectiveHistory, type StudyMode } from '../history';
 import { calendarData, trendPoints, streakInfo, type TrendMode } from '../deriveHistory';
 import { computePrediction, recommendedPace, type Prediction } from '../predictor';
@@ -557,15 +557,25 @@ async function renderPredictTab(
       dailySamples,
     });
 
-    // 実績カーブは必修の教材消化(passed_materials)から直接再構成する。
-    // learning_amounts(学習数)は非必修も含むため使わない：非必修を多くやった日に
-    // 必修の残りが過剰に減って見える（＝過去の実績を過大表示する）のを防ぐ。
+    // 実績カーブ = 必修の教材消化(passed_materials)から直接再構成（learning_amounts=合算は不使用）。
     // 各日の total はロールオーバー時に変化しうるので、その日の total があれば優先。
     const recentMat = mh.series.slice(-14);
     const actualCurve: { date: string; remaining: number }[] =
       recentMat.length >= 2
         ? recentMat.map((p) => ({ date: p.date, remaining: Math.max(0, (p.total ?? total) - p.passed) }))
         : [{ date: isoDate(zenToday()), remaining: total - passed }];
+    // 過去の遡及実績: 必修コースの受験アンカー(resultLog)＋動画補間から後方外挿（導入以前も含む）。
+    // materialHistory が薄い/穴あきの過去を点線で埋める（教科別バーンダウンと同じ最新手法）。
+    let overallRetro: { date: string; remaining: number }[] = [];
+    try {
+      const requiredIds = await getRequiredCourseIds();
+      const reqLog = subjResultLog.filter((e) => requiredIds.has(e.courseId));
+      const reqMov = subjMovieEvents.filter((m) => requiredIds.has(m.courseId));
+      const evs = completionEvents(reqLog, reqMov);
+      overallRetro = courseRetroRemaining(total, passed, evs);
+    } catch {
+      /* 遡及は補助。失敗しても実績カーブは出す */
+    }
     const savedTarget = await getTargetDate();
     const electivesNote =
       report.takingCourseCount > report.requiredCourseCount
@@ -638,6 +648,7 @@ async function renderPredictTab(
         weekEl,
         calNote,
         deadlineEl,
+        overallRetro,
         subjectBurndown: { courses, hist: subjCoursePassedHist, resultLog: subjResultLog, movieEvents: subjMovieEvents },
       })
     );
@@ -1213,6 +1224,7 @@ function renderPredictorSection(
     weekEl?: HTMLElement | null;
     calNote?: string;
     deadlineEl?: HTMLElement | null;
+    overallRetro?: { date: string; remaining: number }[];
     subjectBurndown?: { courses: CourseMaterial[]; hist: CoursePassedHistory; resultLog: ResultEntry[]; movieEvents: MovieEvent[] } | null;
   }
 ): HTMLElement {
@@ -1302,12 +1314,13 @@ function renderPredictorSection(
   };
   const drawOverall = (target: Date | null): void => {
     chartHost.textContent = '';
-    chartHost.appendChild(renderBurndown(pred, actual, tip, target));
+    chartHost.appendChild(renderBurndown(pred, actual, tip, target, opts.overallRetro));
     legendHost.textContent = '';
     const items: HTMLElement[] = [
       legendLine('var(--muted)', '必要ライン'),
       legendLine(pred.onTrack ? 'var(--success)' : '#d9822b', '予測(帯=P15〜85)'),
       legendItem('var(--primary)', '実績'),
+      ...((opts.overallRetro?.length ?? 0) > 1 ? [legendLine('var(--primary)', '過去の推定（受験記録）')] : []),
       ...(pred.montecarlo ? [legendLine('#e5484d', '完了見込み'), legendItem('#6f5cc4', '完了分布')] : []),
       ...(target ? [legendLine(TARGET_COL, '目標ペース')] : []),
     ];
