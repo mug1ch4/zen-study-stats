@@ -256,6 +256,8 @@ export const CSS = `
 .zss-rl-cta { display: flex; gap: 10px; align-items: center; border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border)); background: color-mix(in srgb, var(--primary) 8%, var(--surface)); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; color: var(--ink); line-height: 1.55; }
 .zss-rl-cta-btn { flex: none; background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .zss-rl-cta-btn:hover { background: var(--primary-strong); }
+.zss-bd-ctrl { display: flex; align-items: center; gap: 10px; }
+.zss-bd-select { font-size: 11px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; max-width: 220px; }
 
 /* --- 今日のデイリークエスト --- */
 .zss-quest {

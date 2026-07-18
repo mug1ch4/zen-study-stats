@@ -27,7 +27,8 @@ import { computePrediction, recommendedPace, type Prediction } from '../predicto
 import { renderCalendar } from '../charts/calendar';
 import { renderTrend } from '../charts/trend';
 import { dataTable } from './dataTable';
-import { renderBurndown } from '../charts/burndown';
+import { renderBurndown, renderCourseBurndown } from '../charts/burndown';
+import type { CoursePassedHistory } from '../history';
 import { renderDonut } from '../charts/donut';
 import { renderHourBars } from '../charts/hourBars';
 import { bayesianAverage } from '../shrinkage';
@@ -530,10 +531,11 @@ async function renderPredictTab(
       Date.now()
     );
     // 教科別ペース × 締切の章内訳 → 「このペースだと間に合わない教科」判定（GET 1回・失敗時は表示しないだけ）
+    const coursePassedHist = await getCoursePassedHistory().catch(() => []);
     let deadlineRisks: CourseDeadlineRisk[] | null = null;
     if (dstatus.next) {
       try {
-        const [detail, coursePassedHist] = await Promise.all([fetchMonthlyReport(dstatus.next.year, dstatus.next.month), getCoursePassedHistory()]);
+        const detail = await fetchMonthlyReport(dstatus.next.year, dstatus.next.month);
         const now = Date.now();
         const groups = detail.deadline_groups.map((g) => ({
           daysLeft: Math.ceil((new Date(g.deadline).getTime() - now) / 86400000),
@@ -561,7 +563,16 @@ async function renderPredictTab(
         : `予測の的中率: 検証データを蓄積中（予測と後日の実績の突き合わせ ${cal.n}/5件〜で表示）。`;
 
     pane.textContent = '';
-    pane.appendChild(renderPredictorSection(pred, actualCurve, tip, todayDone, { savedTarget, electivesNote, weekEl, calNote, deadlineEl }));
+    pane.appendChild(
+      renderPredictorSection(pred, actualCurve, tip, todayDone, {
+        savedTarget,
+        electivesNote,
+        weekEl,
+        calNote,
+        deadlineEl,
+        subjectBurndown: { courses, hist: coursePassedHist },
+      })
+    );
 
     // 通知（節目・デイリー達成）。永続dedupで繰り返さない。
     void notifyProgress(passed, total);
@@ -962,7 +973,14 @@ function renderPredictorSection(
   actual: { date: string; remaining: number }[],
   tip: Tooltip,
   todayAmount: number,
-  opts: { savedTarget: string | null; electivesNote: string; weekEl?: HTMLElement | null; calNote?: string; deadlineEl?: HTMLElement | null }
+  opts: {
+    savedTarget: string | null;
+    electivesNote: string;
+    weekEl?: HTMLElement | null;
+    calNote?: string;
+    deadlineEl?: HTMLElement | null;
+    subjectBurndown?: { courses: CourseMaterial[]; hist: CoursePassedHistory } | null;
+  }
 ): HTMLElement {
   // 見出しの判定（モンテカルロの確率・パーセンタイルを主に）
   let verdict: HTMLElement;
@@ -1048,7 +1066,7 @@ function renderPredictorSection(
     if (t.getTime() >= pred.finalDeadline.getTime() - 12 * 3600 * 1000) return null;
     return t;
   };
-  const drawChart = (target: Date | null): void => {
+  const drawOverall = (target: Date | null): void => {
     chartHost.textContent = '';
     chartHost.appendChild(renderBurndown(pred, actual, tip, target));
     legendHost.textContent = '';
@@ -1061,6 +1079,50 @@ function renderPredictorSection(
     ];
     for (const it of items) legendHost.appendChild(it);
   };
+
+  // 教科別ビュー（傾向グラフ同様の切替）。全体が既定。教科は coursePassedHist の実績＋教科別ペースの投影。
+  const bd = opts.subjectBurndown ?? null;
+  let bdSelId = 0; // 0=全体
+  let bdLastTarget: Date | null = null;
+  const drawSubject = (): void => {
+    chartHost.textContent = '';
+    legendHost.textContent = '';
+    const course = bd?.courses.find((c) => c.id === bdSelId);
+    if (!bd || !course) return;
+    const rem = Math.max(0, course.total - course.passed);
+    const pts: { date: string; remaining: number }[] = [];
+    for (const row of bd.hist) {
+      const p = row.byCourse[bdSelId];
+      if (p !== undefined) pts.push({ date: row.date, remaining: Math.max(0, course.total - p) });
+    }
+    const todayIso = isoDate(zenToday());
+    if (!pts.length || pts[pts.length - 1].date !== todayIso) pts.push({ date: todayIso, remaining: rem });
+    const pace = computeCoursePaces(bd.hist).get(bdSelId);
+    const perDay = pace && pace.samples >= 2 ? pace.perDay : null;
+    chartHost.appendChild(renderCourseBurndown({ title: course.title, total: course.total, remaining: rem, actual: pts, perDay, finalDeadline: pred.finalDeadline }, tip));
+    const daysLeft = Math.max(0, (pred.finalDeadline.getTime() - zenToday().getTime()) / 86400000);
+    const ok = perDay !== null && perDay > 0 && rem / perDay <= daysLeft;
+    legendHost.appendChild(legendLine('var(--muted)', '必要ライン'));
+    legendHost.appendChild(legendItem('var(--primary)', '実績'));
+    if (perDay !== null) legendHost.appendChild(legendLine(ok ? 'var(--success)' : '#d9822b', `現在ペース（約${Math.round(perDay * 7 * 10) / 10}/週）`));
+    else legendHost.appendChild(h('span', { class: 'zss-tsub-note' }, ['教科別ペースは蓄積中（数日で投影線が出ます）']));
+  };
+  const drawChart = (target: Date | null): void => {
+    bdLastTarget = target;
+    if (bdSelId === 0 || !bd) drawOverall(target);
+    else drawSubject();
+  };
+  const bdSel = h('select', { class: 'zss-bd-select', 'aria-label': '表示する教科' }) as HTMLSelectElement;
+  bdSel.appendChild(h('option', { value: '0' }, ['全体（既定）']) as HTMLOptionElement);
+  if (bd) {
+    for (const c of [...bd.courses].filter((c) => c.total > 0).sort((a, b) => (b.total - b.passed) - (a.total - a.passed))) {
+      bdSel.appendChild(h('option', { value: String(c.id) }, [`${c.title}（残${Math.max(0, c.total - c.passed)}）`]) as HTMLOptionElement);
+    }
+    bdSel.addEventListener('change', () => {
+      bdSelId = +bdSel.value;
+      drawChart(bdLastTarget);
+    });
+  }
 
   const updateRec = () => {
     recOut.textContent = '';
@@ -1178,7 +1240,7 @@ function renderPredictorSection(
   const chartBlock = [
     h('div', { class: 'zss-section-head' }, [
       h('div', { class: 'zss-section-title' }, ['実績・完了見込み']),
-      h('div', { class: 'zss-section-note' }, [`締切 ${md(pred.finalDeadline)}`]),
+      h('div', { class: 'zss-bd-ctrl' }, [bdSel, h('span', { class: 'zss-section-note' }, [`締切 ${md(pred.finalDeadline)}`])]),
     ]),
     chartHost,
     legendHost,

@@ -20,11 +20,12 @@ export interface ResultEntry {
   chapterId: number;
   sectionId: number;
   kind: ResultKind;
+  essay?: boolean; // 論述系（結果は単一 answered_at・score は採点後に付く）
   passed: boolean; // 最新時点で合格済みか
   score: number | null; // 最新(前回)の得点
   totalScore: number | null; // 満点
   firstAt: number | null; // 初回受験 epoch秒
-  firstPassed: boolean | null; // 初回で合格したか
+  firstPassed: boolean | null; // 初回で合格したか（essay系は不明=null）
   firstScore: number | null; // 初回の得点
   latestAt: number | null; // 最新(前回)受験 epoch秒
 }
@@ -34,11 +35,16 @@ export interface ParsedResult {
   totalScore: number | null;
   first: { passed: boolean; score: number | null; at: number | null } | null;
   latest: { passed: boolean; score: number | null; at: number | null } | null;
+  /** essay系（論述）のスキーマ: result が first/latest でなく単一 { answered_at, score }。 */
+  single: { at: number | null; score: number | null } | null;
 }
 
-/** 結果ページHTMLから data-evaluation-{test|report}-params を取り出す（純関数・失敗は null）。 */
+/** 結果ページHTMLから data-{evaluation|essay}-{test|report}-params を取り出す（純関数・失敗は null）。
+ *  evaluation系: result.first/latest。essay系: result.answered_at 単一（score は採点後に数値化）。 */
 export function parseResultParams(html: string): ParsedResult | null {
-  const m = html.match(/data-evaluation-(?:test|report)-params="([^"]*)"/) ?? html.match(/data-evaluation-(?:test|report)-params='([^']*)'/);
+  const m =
+    html.match(/data-(?:evaluation|essay)-(?:test|report)-params="([^"]*)"/) ??
+    html.match(/data-(?:evaluation|essay)-(?:test|report)-params='([^']*)'/);
   if (!m) return null;
   const unescaped = m[1]
     .replace(/&quot;/g, '"')
@@ -53,15 +59,22 @@ export function parseResultParams(html: string): ParsedResult | null {
       result?: {
         first?: { passed?: boolean; score?: number; answered_at?: number };
         latest?: { passed?: boolean; score?: number; answered_at?: number };
+        answered_at?: number;
+        score?: number | null;
       };
     };
     const side = (s?: { passed?: boolean; score?: number; answered_at?: number }) =>
       s ? { passed: !!s.passed, score: typeof s.score === 'number' ? s.score : null, at: typeof s.answered_at === 'number' ? s.answered_at : null } : null;
+    const single =
+      j.result && typeof j.result.answered_at === 'number'
+        ? { at: j.result.answered_at, score: typeof j.result.score === 'number' ? j.result.score : null }
+        : null;
     return {
       passed: !!j.passed,
       totalScore: typeof j.total_score === 'number' ? j.total_score : null,
       first: side(j.result?.first),
       latest: side(j.result?.latest),
+      single,
     };
   } catch {
     return null;
@@ -140,41 +153,52 @@ export async function collectResultLog(onProgress?: (p: CollectProgress) => void
   // 1) 章スキャン: 進捗のある章だけを対象（未着手の章に受験済み教材は無い）
   const my = await fetchMyCourses();
   const batch = await fetchCoursesBatch(my.map((c) => c.id));
+  // 章の順序（コース内 index）: 章またぎのアンカー連結（essay_report→次章の第1回テスト等）に使う
   const jobs = batch
     .map((c) => ({
       courseId: c.id,
-      chapterIds: (c.chapters ?? []).filter((ch) => ch.progress && ch.progress.passed_count > 0).map((ch) => ch.id),
+      chapters: (c.chapters ?? [])
+        .map((ch, order) => ({ id: ch.id, order, hasProgress: !!ch.progress && ch.progress.passed_count > 0 }))
+        .filter((ch) => ch.hasProgress),
     }))
-    .filter((j) => j.chapterIds.length);
-  const cands: { courseId: number; chapterId: number; sectionId: number; kind: ResultKind }[] = [];
+    .filter((j) => j.chapters.length);
+  // 結果ページを持つ4種すべてがアンカー（essay系にも result.answered_at がある＝2026-07-18 実測で判明）
+  const KIND_OF: Record<string, { kind: ResultKind; essay: boolean; path: string }> = {
+    evaluation_test: { kind: 'test', essay: false, path: 'evaluation_tests' },
+    essay_test: { kind: 'test', essay: true, path: 'essay_tests' },
+    evaluation_report: { kind: 'report', essay: false, path: 'evaluation_reports' },
+    essay_report: { kind: 'report', essay: true, path: 'essay_reports' },
+  };
+  const cands: { courseId: number; chapterId: number; sectionId: number; kind: ResultKind; essay: boolean; path: string; passed: boolean }[] = [];
   const skels: ChapterSkels = {};
   let scanned = 0;
   for (const j of jobs) {
     onProgress?.({ phase: 'scan', done: ++scanned, total: jobs.length });
-    const chs = await fetchCourseChapters(j.courseId, j.chapterIds);
+    const orderOf = new Map(j.chapters.map((ch) => [ch.id, ch.order]));
+    const chs = await fetchCourseChapters(j.courseId, j.chapters.map((ch) => ch.id));
     await sleep(SCAN_DELAY_MS);
     for (const ch of chs) {
-      // 章スケルトン（動画補間用・追加リクエスト0の副産物）。アンカーと動画が両方ある章のみ。
+      // 章スケルトン（動画補間用・追加リクエスト0の副産物）。アンカーか視聴済み動画のある章を保存
+      // （アンカーだけの章も、章またぎ連結の時間制約として意味を持つ）。
       const skSections: SkelSection[] = ch.sections
         .filter((s) => s.id)
         .map((s) => ({
           id: s.id!,
-          kind: s.resource_type === 'movie' ? 'movie' : s.resource_type === 'evaluation_test' || s.resource_type === 'evaluation_report' ? 'anchor' : 'other',
+          kind: s.resource_type === 'movie' ? 'movie' : KIND_OF[s.resource_type] ? 'anchor' : 'other',
           len: s.resource_type === 'movie' ? s.length ?? 0 : 0,
           passed: s.passed,
         }));
-      if (skSections.some((s) => s.kind === 'anchor') && skSections.some((s) => s.kind === 'movie' && s.passed)) {
-        skels[String(ch.id)] = { courseId: j.courseId, sections: skSections };
+      if (skSections.some((s) => s.kind === 'anchor') || skSections.some((s) => s.kind === 'movie' && s.passed)) {
+        skels[String(ch.id)] = { courseId: j.courseId, order: orderOf.get(ch.id), sections: skSections };
       }
       for (const s of ch.sections) {
-        const kind: ResultKind | null =
-          s.resource_type === 'evaluation_test' ? 'test' : s.resource_type === 'evaluation_report' ? 'report' : null;
-        // essay系（論述）は結果paramsが空（人間採点の別フロー）のため対象外
-        if (!kind || !s.id) continue;
+        const meta = s.resource_type ? KIND_OF[s.resource_type] : undefined;
+        if (!meta || !s.id) continue;
         if (!(s.done || s.passed)) continue; // 未解答は結果が無い
         const cached = cur[String(s.id)];
-        if (cached && cached.passed) continue; // 確定済み＝不変。再取得しない
-        cands.push({ courseId: j.courseId, chapterId: ch.id, sectionId: s.id, kind });
+        // 確定済みは再取得しない。ただし essay系で score 未確定（採点待ち）は点数が付くまで再確認
+        if (cached && cached.passed && !(cached.essay && cached.score === null)) continue;
+        cands.push({ courseId: j.courseId, chapterId: ch.id, sectionId: s.id, kind: meta.kind, essay: meta.essay, path: meta.path, passed: s.passed });
       }
     }
   }
@@ -194,9 +218,8 @@ export async function collectResultLog(onProgress?: (p: CollectProgress) => void
     onProgress?.({ phase: 'fetch', done: ++done, total: todo.length });
     await sleep(FETCH_DELAY_MS);
     try {
-      const kindPath = c.kind === 'test' ? 'evaluation_tests' : 'evaluation_reports';
       const r = await fetch(
-        `https://www.nnn.ed.nico/contents/courses/${c.courseId}/chapters/${c.chapterId}/${kindPath}/${c.sectionId}/result?content_type=monka`,
+        `https://www.nnn.ed.nico/contents/courses/${c.courseId}/chapters/${c.chapterId}/${c.path}/${c.sectionId}/result?content_type=monka`,
         { credentials: 'include' }
       );
       if (!r.ok) {
@@ -208,19 +231,35 @@ export async function collectResultLog(onProgress?: (p: CollectProgress) => void
         failed++;
         continue;
       }
-      cur[String(c.sectionId)] = {
-        courseId: c.courseId,
-        chapterId: c.chapterId,
-        sectionId: c.sectionId,
-        kind: c.kind,
-        passed: p.passed,
-        score: p.latest?.score ?? null,
-        totalScore: p.totalScore,
-        firstAt: p.first?.at ?? null,
-        firstPassed: p.first?.passed ?? null,
-        firstScore: p.first?.score ?? null,
-        latestAt: p.latest?.at ?? null,
-      };
+      cur[String(c.sectionId)] = c.essay
+        ? {
+            // essay系: 単一 answered_at。合否は params に無いため章データ(section.passed)を採用。
+            courseId: c.courseId,
+            chapterId: c.chapterId,
+            sectionId: c.sectionId,
+            kind: c.kind,
+            essay: true,
+            passed: c.passed,
+            score: p.single?.score ?? null,
+            totalScore: p.totalScore,
+            firstAt: p.single?.at ?? null,
+            firstPassed: null,
+            firstScore: null,
+            latestAt: p.single?.at ?? null,
+          }
+        : {
+            courseId: c.courseId,
+            chapterId: c.chapterId,
+            sectionId: c.sectionId,
+            kind: c.kind,
+            passed: p.passed,
+            score: p.latest?.score ?? null,
+            totalScore: p.totalScore,
+            firstAt: p.first?.at ?? null,
+            firstPassed: p.first?.passed ?? null,
+            firstScore: p.first?.score ?? null,
+            latestAt: p.latest?.at ?? null,
+          };
       ok++;
       if (ok % 10 === 0) await saveMap(cur); // 中断してもここまでの成果は残す
     } catch {

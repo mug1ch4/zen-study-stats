@@ -36,6 +36,18 @@ describe('parseResultParams', () => {
     expect(parseResultParams('<html><body>shell</body></html>')).toBeNull();
     expect(parseResultParams('<div data-evaluation-test-params="{broken">')).toBeNull();
   });
+  it('essay系スキーマ（result.answered_at 単一・score は採点待ちで null）', () => {
+    const html = `<div data-essay-report-params="${esc({ result: { answered_at: 1784353083, score: null }, answerings: ['a'], teacherComments: [], total_score: 20 })}">`;
+    const p = parseResultParams(html);
+    expect(p?.single).toEqual({ at: 1784353083, score: null });
+    expect(p?.totalScore).toBe(20);
+    expect(p?.first).toBeNull();
+    expect(p?.latest).toBeNull();
+  });
+  it('essay_test の属性名にも対応', () => {
+    const p = parseResultParams(`<div data-essay-test-params="${esc({ result: { answered_at: 100, score: 3 }, total_score: 5 })}">`);
+    expect(p?.single).toEqual({ at: 100, score: 3 });
+  });
 });
 
 const entry = (o: Partial<ResultEntry>): ResultEntry => ({

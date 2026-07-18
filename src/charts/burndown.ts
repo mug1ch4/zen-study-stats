@@ -17,6 +17,105 @@ export interface Pt {
 
 const TARGET_COL = '#0d9488'; // 目標日ライン（凡例と共有）
 
+export interface CourseBurn {
+  title: string;
+  total: number;
+  remaining: number;
+  actual: Pt[]; // 教科別 passed 履歴からの日次残り
+  perDay: number | null; // 教科別の現在ペース（教材/日）。null=蓄積不足
+  finalDeadline: Date;
+}
+
+/** 教科別バーンダウン: 教科別 passed 履歴の実績＋現在ペースの投影線＋必要ライン。
+ *  全体版と同じ軸レイアウト（比較しやすさ優先）。モンテカルロは教科別には行わない（日次が疎なため）。 */
+export function renderCourseBurndown(c: CourseBurn, tip: Tooltip): SVGElement {
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${c.title} のバーンダウン` });
+  const total = Math.max(1, c.total);
+  const nowAnchor = zenToday().getTime();
+  const t0 = c.actual.length ? parseDate(c.actual[0].date).getTime() : nowAnchor;
+  const t1 = c.finalDeadline.getTime();
+  const span = Math.max(DAY, t1 - t0);
+  const x = (t: number) => L + Math.max(0, Math.min(1, (t - t0) / span)) * PLOT_W;
+  const y = (rem: number) => BASE_Y - (Math.max(0, Math.min(total, rem)) / total) * PLOT_H;
+  const nowT = Math.min(nowAnchor, t1);
+
+  for (const v of [0, total]) {
+    const yy = y(v);
+    svg.appendChild(s('line', { x1: L, y1: yy, x2: L + PLOT_W, y2: yy, stroke: 'var(--border)', 'stroke-width': 1 }));
+    svg.appendChild(s('text', { x: L - 5, y: yy + 3, 'text-anchor': 'end', 'font-size': 9, fill: 'var(--faint)' }, [String(v)]));
+  }
+  // 週末/祝日の縦帯
+  for (let t = t0; t <= t1; t += DAY) {
+    const d = new Date(t);
+    if (d.getDay() === 0 || d.getDay() === 6 || isHoliday(isoLocal(d))) {
+      svg.appendChild(s('rect', { x: x(t) - (PLOT_W / (span / DAY)) / 2, y: T, width: Math.max(1, PLOT_W / (span / DAY)), height: PLOT_H, fill: 'var(--muted)', opacity: 0.06 }));
+    }
+  }
+  // 月ティック＋ラベル
+  {
+    const s0 = new Date(t0);
+    let m = new Date(s0.getFullYear(), s0.getMonth(), 1, 12);
+    while (m.getTime() <= t1) {
+      const next = new Date(m.getFullYear(), m.getMonth() + 1, 1, 12);
+      const mStart = Math.max(m.getTime(), t0);
+      const mEnd = Math.min(next.getTime(), t1);
+      if (m.getTime() >= t0) svg.appendChild(s('line', { x1: x(m.getTime()), y1: BASE_Y, x2: x(m.getTime()), y2: BASE_Y + 4, stroke: 'var(--faint)', 'stroke-width': 1 }));
+      svg.appendChild(s('text', { x: (x(mStart) + x(mEnd)) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 9, fill: 'var(--faint)' }, [`${m.getMonth() + 1}月`]));
+      m = next;
+    }
+  }
+  // 締切の縦線
+  const dx = x(t1);
+  svg.appendChild(s('line', { x1: dx, y1: T, x2: dx, y2: BASE_Y, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3' }));
+  svg.appendChild(s('text', { x: dx, y: T + 8, 'text-anchor': 'end', 'font-size': 9, fill: 'var(--muted)' }, [`${c.finalDeadline.getMonth() + 1}/${c.finalDeadline.getDate()}`]));
+  // 必要ライン
+  svg.appendChild(s('line', {
+    x1: x(nowT), y1: y(c.remaining), x2: dx, y2: y(0),
+    stroke: 'var(--muted)', 'stroke-width': 1.5, 'stroke-dasharray': '4 4',
+    class: 'zss-afade', style: 'animation-delay:250ms',
+  }));
+  // 現在ペースの投影線（教科別ペース）。締切内に0到達なら緑・届かなければ橙で不足を可視化
+  if (c.perDay !== null && c.remaining > 0) {
+    const daysLeft = Math.max(0, (t1 - nowT) / DAY);
+    const eta = c.perDay > 0 ? c.remaining / c.perDay : Infinity;
+    const ok = eta <= daysLeft;
+    const col = ok ? 'var(--success)' : '#d9822b';
+    const endT = ok ? nowT + eta * DAY : t1;
+    const endRem = ok ? 0 : c.perDay > 0 ? Math.max(0, c.remaining - c.perDay * daysLeft) : c.remaining;
+    svg.appendChild(s('line', {
+      x1: x(nowT), y1: y(c.remaining), x2: x(endT), y2: y(endRem),
+      stroke: col, 'stroke-width': 2, 'stroke-linecap': 'round', pathLength: 1, class: 'zss-adraw',
+    }));
+    if (ok) {
+      const fx = x(endT);
+      svg.appendChild(s('line', { x1: fx, y1: y(0), x2: fx, y2: y(0) + 4, stroke: col, 'stroke-width': 1 }));
+      const fd = new Date(endT);
+      svg.appendChild(s('text', { x: fx, y: T + 8, 'text-anchor': 'middle', 'font-size': 9, fill: col, 'font-weight': 700, class: 'zss-afade', style: 'animation-delay:800ms' }, [`${fd.getMonth() + 1}/${fd.getDate()}`]));
+    }
+  }
+  // 実績
+  if (c.actual.length > 1) {
+    const pts = c.actual.map((p) => `${x(parseDate(p.date).getTime()).toFixed(1)},${y(p.remaining).toFixed(1)}`).join(' ');
+    svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));
+  }
+  for (const p of c.actual) {
+    svg.appendChild(s('circle', {
+      cx: x(parseDate(p.date).getTime()), cy: y(p.remaining), r: 2, fill: 'var(--primary)',
+      onmousemove: (e: Event) => {
+        const me = e as MouseEvent;
+        const d = parseDate(p.date);
+        tip.show(me.clientX, me.clientY, `<b>${d.getMonth() + 1}/${d.getDate()}</b> ${c.title} 残 ${Math.round(p.remaining)} 教材`);
+      },
+      onmouseleave: () => tip.hide(),
+    }));
+  }
+  svg.appendChild(s('circle', {
+    cx: x(nowT), cy: y(c.remaining), r: 3.5, fill: 'var(--primary)', stroke: 'var(--surface)', 'stroke-width': 1.5,
+    class: 'zss-acell', style: 'animation-delay:700ms',
+  }));
+  return svg;
+}
+
 /** 教材消化バーンダウン: 日次実績(再構成)＋曜日/祝日考慮の予測カーブ＋必要ライン＋（任意）目標日ライン。 */
 export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, targetDate?: Date | null): SVGElement {
   const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': '教材消化バーンダウン' });

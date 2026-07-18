@@ -73,6 +73,32 @@ describe('interpolateMovieEvents', () => {
     const ev = interpolateMovieEvents(skel(), [entry(101, T0)]);
     expect(ev).toHaveLength(0);
   });
+  it('章またぎ: 前章の最終アンカー→次章の第1アンカー間の動画も補間（order連結）', () => {
+    const skels: ChapterSkels = {
+      '10': { courseId: 1, order: 0, sections: [{ id: 101, kind: 'anchor', len: 0, passed: true }] }, // 前章はレポートで終わる
+      '11': {
+        courseId: 1,
+        order: 1,
+        sections: [
+          { id: 301, kind: 'movie', len: 600, passed: true }, // 次章冒頭の動画
+          { id: 111, kind: 'anchor', len: 0, passed: true },
+        ],
+      },
+    };
+    // gap=900・S=600 → slack=300(5分) → 採用。中点 = T0+600+150
+    const ev = interpolateMovieEvents(skels, [entry(101, T0), entry(111, T0 + 900)]);
+    expect(ev).toHaveLength(1);
+    expect(ev[0].at).toBe(T0 + 750);
+  });
+  it('章またぎ: 順序が飛んでいる（間の章を後回し）場合は幅不整合で不採用', () => {
+    const skels: ChapterSkels = {
+      '10': { courseId: 1, order: 0, sections: [{ id: 101, kind: 'anchor', len: 0, passed: true }] },
+      '11': { courseId: 1, order: 1, sections: [{ id: 301, kind: 'movie', len: 600, passed: true }, { id: 111, kind: 'anchor', len: 0, passed: true }] },
+    };
+    // 実際は間に長時間の別作業 → gap が S+スラックを大きく超える → 不採用
+    const ev = interpolateMovieEvents(skels, [entry(101, T0), entry(111, T0 + 6 * 3600)]);
+    expect(ev).toHaveLength(0);
+  });
 });
 
 describe('movieHours', () => {

@@ -14,6 +14,7 @@ export interface SkelSection {
 }
 export interface ChapterSkel {
   courseId: number;
+  order?: number; // コース内の章番号（章またぎ連結用。無い=旧データは章単体で処理）
   sections: SkelSection[]; // 章内の表示順
 }
 export type ChapterSkels = Record<string, ChapterSkel>; // key: chapterId
@@ -51,17 +52,18 @@ export function interpolateMovieEvents(skels: ChapterSkels, entries: ResultEntry
     if (t) anchorTime.set(e.sectionId, t);
   }
   const out: MovieEvent[] = [];
-  for (const sk of Object.values(skels)) {
+  // アンカー対の評価（1系列 = 章内 or 章またぎ連結列）
+  const processSequence = (sections: SkelSection[], courseId: number): void => {
     const anchors: { pos: number; t: number }[] = [];
-    sk.sections.forEach((s, pos) => {
+    sections.forEach((s, pos) => {
       const t = anchorTime.get(s.id);
       if (t) anchors.push({ pos, t });
     });
     for (let i = 1; i < anchors.length; i++) {
       const a = anchors[i - 1];
       const b = anchors[i];
-      if (b.t <= a.t) continue; // 章の順序どおりに受験していない（後から戻った等）→不採用
-      const movies = sk.sections.slice(a.pos + 1, b.pos).filter((s) => s.kind === 'movie' && s.passed && s.len > 0);
+      if (b.t <= a.t) continue; // 並び順どおりに受験していない（後から戻った等）→不採用
+      const movies = sections.slice(a.pos + 1, b.pos).filter((s) => s.kind === 'movie' && s.passed && s.len > 0);
       if (!movies.length) continue;
       const S = movies.reduce((x, m) => x + m.len, 0);
       const gap = b.t - a.t;
@@ -75,9 +77,20 @@ export function interpolateMovieEvents(skels: ChapterSkels, entries: ResultEntry
       for (const m of movies) {
         prefix += m.len;
         const earliest = a.t + prefix;
-        out.push({ at: Math.round(earliest + half), courseId: sk.courseId, len: m.len, uncertaintySec: Math.round(half) });
+        out.push({ at: Math.round(earliest + half), courseId, len: m.len, uncertaintySec: Math.round(half) });
       }
     }
+  };
+  // コースごとに order のある章を連結して1系列に（章またぎの窓
+  // ＝essay_report→次章の第1回テスト等も評価できる）。order の無い旧データは章単体で処理。
+  const byCourse = new Map<number, ChapterSkel[]>();
+  for (const sk of Object.values(skels)) {
+    (byCourse.get(sk.courseId) ?? byCourse.set(sk.courseId, []).get(sk.courseId)!).push(sk);
+  }
+  for (const [courseId, list] of byCourse) {
+    const ordered = list.filter((sk) => sk.order !== undefined).sort((x, y) => (x.order ?? 0) - (y.order ?? 0));
+    if (ordered.length) processSequence(ordered.flatMap((sk) => sk.sections), courseId);
+    for (const sk of list.filter((sk) => sk.order === undefined)) processSequence(sk.sections, courseId);
   }
   return out.sort((x, y) => x.at - y.at);
 }
