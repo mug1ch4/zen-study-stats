@@ -150,7 +150,7 @@ docs/                  index.html（ライブデモ・GitHub Pages 配信）
 
 ## 補足
 - content script は `www.nnn.ed.nico` 全体にマッチ（`run_at: document_start`）。SPA遷移・React再描画に MutationObserver + history パッチで追従。/setting の本家パネルは描画前(rAF)に隠してフラッシュ防止。
-- 先行事例 [Level222/zen-study-plus](https://github.com/Level222/zen-study-plus)（MIT）はダーク/統計グラフ無し。本拡張は独自実装。
+- 先行事例 [Level222/zen-study-plus](https://github.com/Level222/zen-study-plus)（MIT）には API・サイト構造の理解で大いに助けられた（下記「謝辞」参照）。コードは本拡張で独自実装。機能面の焦点も異なる（あちらは動画時間表示・ショートカット等のUX改善、こちらは統計・可視化・予測）。
 - 開始日/長期日別/完了日時のAPIは存在しない（`API_REFERENCE.md` 参照）ため、長期履歴は自前蓄積、予測は開始日非依存（直近ペース＋MC）。
 - **日境界は 5:00 AM (JST)**: ZEN Study の日別学習数は深夜0時でなく朝5時に切り替わる。ストリーク・カレンダー・予測基点・スナップショットの日付キーはこの境界に揃える（`format.ts` の `zenTodayISO()`／端末TZ非依存）。
 - 日付の "YYYY-MM-DD" は必ず `format.ts` の `parseDate`/`isoLocal` を使う（`toISOString()` はUTC基準で祝日/曜日判定がズレるため不可）。
@@ -159,6 +159,12 @@ docs/                  index.html（ライブデモ・GitHub Pages 配信）
 
 ## 未対応（レビュー指摘・保留中）
 - （解消済み）~~ダークモードの `getComputedStyle` 全要素スキャン／トグルのポーリング再設置~~ → トグルはオブザーバ駆動化済み。スキャンは読み書き二相＋class/style シグネチャキャッシュ化で、再スキャン・attribute追従がほぼ無料に（v0.1.9）。
+
+## 謝辞
+- **[Level222/zen-study-plus](https://github.com/Level222/zen-study-plus)**（MIT License）— ZEN Study 向け拡張の先行プロジェクト。本拡張の開発では、同プロジェクトのソースコード（公開リポジトリ）を読解して多くを学ばせてもらった:
+  - 月別レポート詳細 API（`/v2/dashboard/report_progresses/monthly/{year}/{month}`）の存在（本拡張の締切表示・/my_course 注入・締切リスク判定の土台になった）
+  - `n_school` / `advanced` のコース種別と型構造、「Nプラス」= `material_type: "supplement"` の対応関係など、API レスポンスの理解全般
+  - コードの複製はしていない（本拡張は全て独自実装）が、知見の面で明確に先行者の恩恵を受けている。感謝します。
 
 ## 免責・ライセンス
 - **非公式・無保証**: 本ソフトウェアは現状有姿(AS IS)で提供され、いかなる保証もありません。利用による不利益・データ損失等について作者は責任を負いません。
