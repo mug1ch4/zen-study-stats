@@ -67,6 +67,12 @@ export function motivationNudges(ctx: MotivationCtx): Nudge[] {
   const remaining = Math.max(0, ctx.totalMaterials - ctx.passedMaterials);
   const pct = ctx.totalMaterials ? Math.round((ctx.passedMaterials / ctx.totalMaterials) * 100) : 0;
 
+  // 0) 全教材完了: 継続を促す文言（「この調子で」「1件でも進めれば」等）は不適切なので、
+  //    祝福メッセージ1件に短絡する。
+  if (ctx.totalMaterials > 0 && remaining === 0) {
+    return [{ kind: 'progress', text: `全${ctx.totalMaterials}教材を完了しました。おつかれさまでした。積み上げた記録は分析タブでいつでも振り返れます。` }];
+  }
+
   // 1) ストリーク（Loss Aversion / Goal-Gradient）— 時間依存で最優先
   if (ctx.streak.current >= 1 && ctx.todayAmount === 0) {
     out.push({ kind: 'streak', text: `連続${ctx.streak.current}日を継続中。今日まだ0件です—1件でも進めれば記録は途切れません。` });

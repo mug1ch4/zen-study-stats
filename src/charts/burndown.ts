@@ -17,14 +17,18 @@ export interface Pt {
 
 const TARGET_COL = '#0d9488'; // 目標日ライン（凡例と共有）
 
-/** 全教材完了時の「達成」チェックマーク（円→チェック描画→ラベルの順にアニメ）。中央に配置。
- *  静止状態（reduced-motion）でも見えるよう、描画はCSSクラス側で制御（クラスの既定は「表示」）。 */
-function appendCompletionBadge(svg: SVGElement, label = '達成'): void {
+// チェックのポリライン長より少し大きい固定値（pathLength に頼らず実長で dash 制御）。
+const CHECK_LEN = 48;
+/** 完了時の「達成」チェックマーク（円→チェック描画→ラベルの順にアニメ）。中央に配置。
+ *  静止状態（reduced-motion）でも見えるよう、描画はCSSクラス側で制御（属性の既定は「表示」）。 */
+function appendCompletionBadge(svg: SVGElement, doneText: string): void {
   const cx = W / 2;
   const cy = T + PLOT_H * 0.42;
   const r = 26;
   const circ = 2 * Math.PI * r;
-  svg.appendChild(s('circle', { cx, cy, r: r + 6, fill: 'var(--success)', opacity: 0.1, class: 'zss-acell', style: 'animation-delay:60ms' }));
+  // 背景の薄い塗り。zss-acell(pop) は opacity を 1 へ上げてしまい緑チェックが緑ディスクに埋もれるため、
+  // opacity を保持する zss-afade(--fo) を使う（静止時=属性 opacity=0.12 で担保）。
+  svg.appendChild(s('circle', { cx, cy, r: r + 6, fill: 'var(--success)', opacity: 0.12, class: 'zss-afade', style: 'animation-delay:60ms;--fo:0.12' }));
   svg.appendChild(s('circle', {
     cx, cy, r, fill: 'none', stroke: 'var(--success)', 'stroke-width': 3,
     transform: `rotate(-90 ${cx} ${cy})`, class: 'zss-cbadge-ring', style: `--circ:${circ}`,
@@ -33,12 +37,12 @@ function appendCompletionBadge(svg: SVGElement, label = '達成'): void {
   svg.appendChild(s('polyline', {
     points: `${cx - 12},${cy + 1} ${cx - 4},${cy + 9} ${cx + 13},${cy - 10}`,
     fill: 'none', stroke: 'var(--success)', 'stroke-width': 4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
-    pathLength: 1, class: 'zss-cbadge-check', 'stroke-dasharray': 1, 'stroke-dashoffset': 0,
+    class: 'zss-cbadge-check', 'stroke-dasharray': CHECK_LEN, 'stroke-dashoffset': 0, // 静止時＝実長dashで全描画
   }));
   svg.appendChild(s('text', {
     x: cx, y: cy + r + 20, 'text-anchor': 'middle', 'font-size': 13, 'font-weight': 700, fill: 'var(--success)',
     class: 'zss-afade', style: 'animation-delay:900ms',
-  }, [`${label} · 全教材完了`]));
+  }, [`達成 · ${doneText}`]));
 }
 
 export interface CourseBurn {
@@ -147,7 +151,7 @@ export function renderCourseBurndown(c: CourseBurn, tip: Tooltip): SVGElement {
     cx: x(nowT), cy: y(c.remaining), r: 3.5, fill: 'var(--primary)', stroke: 'var(--surface)', 'stroke-width': 1.5,
     class: 'zss-acell', style: 'animation-delay:700ms',
   }));
-  if (c.remaining <= 0 && c.total > 0) appendCompletionBadge(svg);
+  if (c.remaining <= 0 && c.total > 0) appendCompletionBadge(svg, '本教材完了');
   return svg;
 }
 
@@ -310,6 +314,6 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, target
     class: 'zss-acell', style: 'animation-delay:900ms',
   }));
 
-  if (p.remaining <= 0 && p.total > 0) appendCompletionBadge(svg);
+  if (p.remaining <= 0 && p.total > 0) appendCompletionBadge(svg, '全教材完了');
   return svg;
 }
