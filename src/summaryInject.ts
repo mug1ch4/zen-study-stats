@@ -139,6 +139,7 @@ function mountHost(spot: Spot, info: PathInfo): { host: HTMLElement; box: HTMLEl
   // 横メニュー内の選択中項目が z-index:10001 を持つため、それを確実に上回る値で前面固定。
   // host はスクロールコンテナ内＝モーダル/プレイヤー本体とは stacking context が分離するので過大でも安全。
   host.style.cssText = spot.sticky ? 'display:block;position:sticky;top:0;z-index:100000;' : 'display:block;';
+  host.setAttribute('data-sticky', spot.sticky ? '1' : '0'); // 後から sticky 昇格を判定するため
   const root = host.attachShadow({ mode: 'open' });
   const box = bannerBox();
   root.appendChild(box);
@@ -157,8 +158,17 @@ export async function ensureCourseSummary(): Promise<void> {
     return;
   }
   if (existing) {
-    if (existing.getAttribute('data-key') === info.key) return; // 既に正しく設置済み
-    existing.remove(); // 別ページのが残っている → 撤去
+    if (existing.getAttribute('data-key') === info.key) {
+      // 同一ページに既設置。ただし SPA遷移直後はスクロールコンテナが未構築で「埋め込み」で
+      // 置かれることがある。埋め込み(data-sticky='0')のままなら、コンテナ出現後に sticky へ昇格。
+      // sticky 済み(='1')や elective（軽ラベル）はそのまま（findSpot を無駄に呼ばない）。
+      if (existing.getAttribute('data-sticky') === '1' || electiveKeys.has(info.key)) return;
+      const spot = findSpot(info);
+      if (spot?.sticky) existing.remove(); // 昇格可能 → 下で再設置
+      else return; // まだコンテナが無い（埋め込みのまま据え置き）
+    } else {
+      existing.remove(); // 別ページのが残っている → 撤去
+    }
   }
 
   // 再注入の共通ガード（React がホストを消し続けるページでの暴走防止）
