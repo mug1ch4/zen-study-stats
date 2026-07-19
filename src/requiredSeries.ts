@@ -76,15 +76,67 @@ export function buildRequiredSeries(input: RequiredSeriesInput): RequiredSeries 
   const anchorDates = [...anchorDelta.keys()].sort();
   const coverFrom = anchorDates[0] ?? null;
   const coverTo = anchorDates[anchorDates.length - 1] ?? null;
-  const inCoverage = (d: string): boolean => coverFrom !== null && coverTo !== null && d >= coverFrom && d <= coverTo;
+  const inAnchorCoverage = (d: string): boolean => coverFrom !== null && coverTo !== null && d >= coverFrom && d <= coverTo;
+
+  // --- LA日別（補助指標）: 旧課程・未来を除外 ---
+  const laMap = new Map<string, number>();
+  for (const p of input.la ?? []) {
+    if (p.date > today) continue;
+    if (rolledOver && boundaryDate && p.date < boundaryDate) continue;
+    laMap.set(p.date, p.amount);
+  }
+  const laDates = [...laMap.keys()].sort();
+  const laFrom = laDates[0] ?? null;
+  // 被覆 = アンカー窓 ∪ LAのある日（LA=0 は「観測されたゼロ」なので被覆に含める）
+  const inCoverage = (d: string): boolean => inAnchorCoverage(d) || laMap.has(d);
 
   // --- チェックポイント（cum が確定している日）: MHスナップ ＋ 今日=passedNow(ライブ) ---
   const cps: { date: string; cum: number }[] = mhSeg.filter((p) => p.date < today).map((p) => ({ date: p.date, cum: p.passed }));
   cps.push({ date: today, cum: input.passedNow });
 
-  // --- 系列範囲: min(被覆開始, 最古チェックポイント) 〜 今日。上限 MAX_DAYS ---
+  // --- §3.2 必修シェア s とLAベンチマーク指標系列 I_d ---
+  // アンカーΔは下界（gap不適合の動画・skels未収集章が漏れ、実測で真値の6割）。
+  // LA×s との max で欠落を埋める（temporal disaggregation の補助指標按分）。
+  // s: 完了チェックポイント区間（今日を含む区間は除外＝当日LAは取得ラグで過小）の Σdiff/ΣLA。
+  //    区間が無ければ min(1, passedNow/ΣLA全日)（導入初日のフォールバック・上限1）。
+  let share: number | null = null;
+  {
+    let sumDiff = 0;
+    let sumLa = 0;
+    for (let i = 1; i < cps.length; i++) {
+      if (cps[i].date === today) continue;
+      const dayCount = daysBetween(cps[i - 1].date, cps[i].date);
+      let la = 0;
+      let laDays = 0;
+      for (let k = 1; k <= dayCount; k++) {
+        const d = addDaysISO(cps[i - 1].date, k);
+        if (laMap.has(d)) {
+          la += laMap.get(d)!;
+          laDays++;
+        }
+      }
+      if (laDays === dayCount) {
+        // LAが区間を完全被覆する場合のみ（部分被覆だと diff/ΣLA が過大になる）
+        sumDiff += Math.max(0, cps[i].cum - cps[i - 1].cum);
+        sumLa += la;
+      }
+    }
+    if (sumLa >= 10) share = Math.min(1, Math.max(0, sumDiff / sumLa));
+    else {
+      const laFull = laDates.filter((d) => d < today).reduce((a, d) => a + laMap.get(d)!, 0);
+      if (laFull > 0) share = Math.min(1, input.passedNow / laFull);
+    }
+  }
+  const indicator = (d: string): number => {
+    const a = anchorDelta.get(d) ?? 0;
+    const la = share !== null && laMap.has(d) ? laMap.get(d)! * share : 0;
+    return Math.max(a, la);
+  };
+
+  // --- 系列範囲: min(被覆開始, LA開始, 最古チェックポイント) 〜 今日。上限 MAX_DAYS ---
   let startDate = cps[0].date;
   if (coverFrom && coverFrom < startDate) startDate = coverFrom;
+  if (laFrom && laFrom < startDate) startDate = laFrom;
   if (daysBetween(startDate, today) > MAX_DAYS - 1) startDate = addDaysISO(today, -(MAX_DAYS - 1));
 
   const points = new Map<string, SeriesPoint>();
@@ -97,17 +149,17 @@ export function buildRequiredSeries(input: RequiredSeriesInput): RequiredSeries 
   const noMh = cps.length <= 1; // 今日(ライブ)しか無い
   if (noAnchors && noMh) {
     // 系列範囲はチェックポイント（=今日のみ）でなく LA の全期間（上限 MAX_DAYS）。
-    const laAll = (input.la ?? []).filter((p) => p.date <= today).sort((a, b) => (a.date < b.date ? -1 : 1));
-    let laStart = laAll.length ? laAll[0].date : today;
+    // delta は LA×必修シェア s（LAは課外・補足を含む合算のため）。
+    const s = share ?? 1;
+    let laStart = laFrom ?? today;
     if (daysBetween(laStart, today) > MAX_DAYS - 1) laStart = addDaysISO(today, -(MAX_DAYS - 1));
-    const la = laAll.filter((p) => p.date >= laStart);
+    const amtOf = (d: string): number | null => (laMap.has(d) && d >= laStart ? laMap.get(d)! * s : null);
     let cum = input.passedNow;
     const rev: SeriesPoint[] = [];
-    rev.push({ date: today, delta: la.find((p) => p.date === today)?.amount ?? null, cum, source: 'approx', estimated: false });
+    rev.push({ date: today, delta: amtOf(today), cum, source: 'approx', estimated: false });
     for (let d = addDaysISO(today, -1); d >= laStart; d = addDaysISO(d, -1)) {
-      const amt = la.find((p) => p.date === d)?.amount ?? null;
       cum = Math.max(0, cum - (rev[rev.length - 1].delta ?? 0));
-      rev.push({ date: d, delta: amt, cum, source: 'approx', estimated: true });
+      rev.push({ date: d, delta: amtOf(d), cum, source: 'approx', estimated: true });
     }
     const pts = rev.reverse();
     for (const p of pts) {
@@ -131,12 +183,12 @@ export function buildRequiredSeries(input: RequiredSeriesInput): RequiredSeries 
     // 区間内の日（prev.date の翌日〜cp.date）
     const dates: string[] = [];
     for (let k = 1; k <= dayCount; k++) dates.push(addDaysISO(prev.date, k));
-    const S = dates.reduce((a, d) => a + (anchorDelta.get(d) ?? 0), 0);
+    const S = dates.reduce((a, d) => a + indicator(d), 0);
     if (S > 0) {
       const scale = diff / S; // 合計を観測(diff)に厳密一致させる（aggregation constraint）
       let cum = prev.cum;
       for (const d of dates) {
-        const a = anchorDelta.get(d) ?? 0;
+        const a = indicator(d);
         const isLast = d === cp.date;
         const delta = a > 0 ? a * scale : inCoverage(d) ? 0 : null;
         cum = isLast ? cp.cum : cum + (delta ?? 0);
@@ -174,14 +226,42 @@ export function buildRequiredSeries(input: RequiredSeriesInput): RequiredSeries 
     }
   }
 
-  // --- §3.4 最古チェックポイント以前（導入前）: アンカーΔの後方積み戻し外挿 ---
+  // --- §3.4 最古チェックポイント以前（導入前）: 指標系列 I_d の後方積み戻し外挿 ---
+  // アンカーΔだけだと下界（実測で真値の6割）→ LA×s との max（indicator）で欠落を埋める。
   const firstCp = cps[0];
-  if (coverFrom && coverFrom < firstCp.date) {
-    let cum = firstCp.cum;
-    for (let d = addDaysISO(firstCp.date, -1); d >= coverFrom && d >= startDate; d = addDaysISO(d, -1)) {
-      const a = anchorDelta.get(d) ?? 0;
-      const delta = a > 0 ? a : inCoverage(d) ? 0 : null;
-      setPoint({ date: d, delta, cum: Math.max(0, cum), source: 'anchor', estimated: true });
+  const preFrom = [coverFrom, laFrom].filter((x): x is string => x !== null).sort()[0] ?? null;
+  if (preFrom && preFrom < firstCp.date) {
+    // 1) 導入前の各日Δ（被覆内=I_d・被覆外=null で cum持ち越し）と、最初のチェックポイント日自身のΔ
+    //    （前日スナップが無く区間整合が効かないため、ここで I_d により埋める）
+    const preDates: string[] = []; // firstCp前日 → preFrom の降順（被覆外の日も含む）
+    for (let d = addDaysISO(firstCp.date, -1); d >= preFrom && d >= startDate; d = addDaysISO(d, -1)) {
+      preDates.push(d);
+    }
+    const preDeltas = new Map<string, number>(preDates.filter(inCoverage).map((d) => [d, indicator(d)]));
+    const firstCpPoint = points.get(firstCp.date);
+    const fillFirstCp = firstCpPoint !== undefined && firstCpPoint.delta === null && inCoverage(firstCp.date);
+    const firstCpDelta = fillFirstCp ? indicator(firstCp.date) : 0;
+    // 2) 総量制約（上界）: Σ導入前Δ + 最初のCP日Δ ≤ firstCp.cum（超過なら一括スケール。
+    //    開始時 passed>0 があり得るため下界側の制約は無い）
+    const preSum = [...preDeltas.values()].reduce((a, b) => a + b, 0) + firstCpDelta;
+    const preScale = preSum > firstCp.cum && preSum > 0 ? firstCp.cum / preSum : 1;
+    if (fillFirstCp && firstCpDelta > 0) {
+      // cum は観測のまま（source:'observed'・estimated:false 維持）。delta のみ推定で埋める
+      //（§3.3 の区間末チェックポイント日も delta はスケール推定＝同じ扱い）。
+      setPoint({ ...firstCpPoint!, delta: firstCpDelta * preScale });
+    }
+    // 3) 後方積み戻しで cum を外挿
+    let cum = firstCp.cum - firstCpDelta * preScale;
+    for (const d of preDates) {
+      if (!preDeltas.has(d)) {
+        // 被覆外: delta不明・cumは持ち越し（従来挙動）
+        setPoint({ date: d, delta: null, cum: Math.max(0, cum), source: 'anchor', estimated: true });
+        continue;
+      }
+      const a = preDeltas.get(d)! * preScale;
+      // LA按分がアンカーを上回った日は 'approx'（近似由来を quality に正しく計上）
+      const src: SeriesPoint['source'] = a > (anchorDelta.get(d) ?? 0) ? 'approx' : 'anchor';
+      setPoint({ date: d, delta: a, cum: Math.max(0, cum), source: src, estimated: true });
       cum = Math.max(0, cum - a);
     }
   }

@@ -135,6 +135,74 @@ describe('buildRequiredSeries', () => {
     expect(s.points.find((p) => p.date === '2026-07-17')?.cum).toBe(92);
   });
 
+  it('LAベンチマーク: 導入前はmax(アンカー,LA×s)・総量上界でスケール・CP日のΔも埋まる', () => {
+    // share = min(1, passedNow/ΣLA全日) = 50/80 = 0.625（完了区間なしのフォールバック）
+    // 導入前Σ = 25(7/15) + max(2, 12.5)(7/16) + 0(7/17) + 12.5(7/18CP日) = 50 > cum40 → ×0.8
+    const s = buildRequiredSeries(
+      base({
+        mh: [{ date: '2026-07-18', passed: 40, total: 200 }],
+        anchorEvents: ev('2026-07-16', 2),
+        la: [
+          { date: '2026-07-15', amount: 40 },
+          { date: '2026-07-16', amount: 20 },
+          { date: '2026-07-17', amount: 0 },
+          { date: '2026-07-18', amount: 20 },
+          { date: '2026-07-19', amount: 10 },
+        ],
+        passedNow: 50,
+      })
+    );
+    expect(point(s, '2026-07-15')?.delta).toBeCloseTo(20, 5); // 40×0.625×0.8
+    expect(point(s, '2026-07-15')?.source).toBe('approx'); // LA按分がアンカー(0)超
+    expect(point(s, '2026-07-16')?.delta).toBeCloseTo(10, 5); // max(2, 12.5)×0.8
+    expect(point(s, '2026-07-17')?.delta).toBe(0); // LA=0 は観測されたゼロ
+    expect(point(s, '2026-07-18')?.delta).toBeCloseTo(10, 5); // CP日のΔも I_d で埋まる
+    expect(point(s, '2026-07-18')?.source).toBe('observed'); // cum は観測のまま
+    // 総量制約: 導入前Σ + CP日Δ = firstCp.cum に一致（開始時 cum が 0 まで戻る）
+    expect(point(s, '2026-07-15')!.cum - point(s, '2026-07-15')!.delta!).toBeCloseTo(0, 5);
+    // 区間 7/18→7/19: diff=10 が LA指標で按分され末尾はライブ値に一致
+    expect(point(s, '2026-07-19')?.delta).toBeCloseTo(10, 5);
+    expect(point(s, '2026-07-19')?.cum).toBe(50);
+  });
+
+  it('LAベンチマーク: 完了CP区間から必修シェアを実測（diff/ΣLA）して導入前に適用', () => {
+    // 区間 7/15→7/17: diff=20, ΣLA=40 → s=0.5。導入前 7/13 は LA30×0.5=15
+    const s = buildRequiredSeries(
+      base({
+        mh: [
+          { date: '2026-07-15', passed: 60, total: 200 },
+          { date: '2026-07-17', passed: 80, total: 200 },
+        ],
+        la: [
+          { date: '2026-07-13', amount: 30 },
+          { date: '2026-07-14', amount: 0 },
+          { date: '2026-07-16', amount: 20 },
+          { date: '2026-07-17', amount: 20 },
+        ],
+        passedNow: 85,
+      })
+    );
+    expect(point(s, '2026-07-13')?.delta).toBeCloseTo(15, 5);
+    expect(point(s, '2026-07-16')?.delta).toBeCloseTo(10, 5); // 区間内も指標按分（20×0.5×scale1）
+    expect(point(s, '2026-07-14')?.delta).toBe(0);
+  });
+
+  it('LAフォールバック: 必修シェア s を掛けて按分（passedNow < ΣLA のとき縮小）', () => {
+    const s = buildRequiredSeries(
+      base({
+        la: [
+          { date: '2026-07-17', amount: 10 },
+          { date: '2026-07-18', amount: 5 },
+          { date: '2026-07-19', amount: 3 },
+        ],
+        passedNow: 9, // ΣLA(全日=15) より小 → s=0.6
+      })
+    );
+    expect(point(s, '2026-07-19')?.delta).toBeCloseTo(1.8, 5);
+    expect(point(s, '2026-07-18')?.cum).toBeCloseTo(7.2, 5); // 9−1.8
+    expect(point(s, '2026-07-17')?.cum).toBeCloseTo(4.2, 5); // 7.2−3
+  });
+
   it('quality.validDays = delta!=null の日数', () => {
     const s = buildRequiredSeries(
       base({
