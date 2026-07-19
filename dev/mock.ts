@@ -27,6 +27,27 @@ function mockHistory(): History {
   return h;
 }
 
+// 教材消化(passed_materials)の日次スナップ履歴。予測タブの「実績カーブ」の元データ。
+// 現在の完了(320=各コース passed の合計)に至る、約45日の単調増加を組む。
+function mockMaterialHist(): History {
+  const h: History = {};
+  const today = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  const days = 45;
+  const start = 150;
+  const end = 320; // = 250+60+10（各コースの passed 合計）＝現在値に一致させる
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const iso = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    const frac = (days - 1 - i) / (days - 1); // 0→1
+    // なだらかな加速（後半に少し伸びる）＋端は現在値に固定。単調増加（減少はロールオーバー扱いで捨てられるため）。
+    const passed = i === 0 ? end : Math.round(start + (end - start) * (0.35 * frac + 0.65 * frac * frac));
+    h[iso] = passed;
+  }
+  return h;
+}
+
 /** 全モックを注入し、直近14日の学習数サンプルを返す。 */
 export function installMocks(): LearningAmounts {
   // 教科別 教材（合計1500・完了320・未着手2教科）
@@ -38,8 +59,8 @@ export function installMocks(): LearningAmounts {
     { id: 5, title: 'サンプル国語', total: 200, passed: 0 },
   ]);
 
-  // 初回想定: 教材履歴はまだ空（total=1500だけ既知）
-  __setMockMaterialHist({}, 1500);
+  // 教材消化(passed_materials)の日次履歴。実績カーブ・予測(モンテカルロ)の元データ（total=1500）。
+  __setMockMaterialHist(mockMaterialHist(), 1500);
 
   // レポート完了予測のモック（合計50・完了20・残30、締切12/15）
   __setMockReport({
