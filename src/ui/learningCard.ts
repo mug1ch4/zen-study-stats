@@ -337,7 +337,11 @@ async function renderRecentTab(
       const e = estDaily[d] ?? 0;
       const ec = estCourse[d] ?? 0;
       const f = secPerLA ? (laMap.get(d) ?? 0) * secPerLA : 0;
-      combined[d] = Math.max(m, e, ec, f);
+      // 学習量ベースの2推定は逆方向に偏る: 教科別（平均×件数）は短い教材を速攻した日に過大、
+      // LA×較正値は当日のLA集計ラグで過小。両方あるときは min で相殺（実測20:10 検証で
+      // 教科別457分/LA291分/実際約300分）。片方しか無ければそれを使う。
+      const eLearn = ec > 0 && f > 0 ? Math.min(ec, f) : Math.max(ec, f);
+      combined[d] = Math.max(m, e, eLearn);
       if (combined[d] > m) estSet.add(d);
     }
     return { combined, estSet, hoursMeasured, hoursEst: estimateHourlyStudySeconds(rlogT, movT, wtT) };
