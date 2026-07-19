@@ -2,7 +2,8 @@ import type { LearningAmounts } from '../api';
 import { computeKpis, computeWeekdayStats } from '../derive';
 import { weekdayLabel, shortDate, zenToday, nowMs, durationStr } from '../format';
 import { getStudyTime, getStudyTimeHours } from '../studyTime';
-import { estimateDailyStudySeconds, estimateHourlyStudySeconds, calibrateSecPerLA } from '../studyTimeEst';
+import { estimateDailyStudySeconds, estimateHourlyStudySeconds, calibrateSecPerLA, totalRetroSeconds, secPerMaterialByCourse, estimateDailyByCourseDelta } from '../studyTimeEst';
+import { getCachedCourseVolumes } from '../courseStats';
 import type { WorkTimes } from '../history';
 import { h } from '../dom';
 import { Tooltip } from './tooltip';
@@ -305,25 +306,38 @@ async function renderRecentTab(
       getStudyTimeHours().catch(() => new Array(24).fill(0) as number[]),
       getSeriesOnce().catch(() => [] as { date: string; amount: number }[]),
     ]);
+    const [cphT, volsT] = await Promise.all([
+      getCoursePassedHistory().catch(() => ({}) as CoursePassedHistory),
+      getCachedCourseVolumes().catch(() => []),
+    ]);
     const movT = interpolateMovieEvents(skelsT, rlogT);
     const estDaily = estimateDailyStudySeconds(rlogT, movT, wtT);
-    // 第3層: 学習数(LA)×較正済み秒/学習。受験記録の推定は詳細ログの抽出時点で止まる
-    // （今日・抽出後の日が抜ける）ため、当日も更新されるLAで埋める（実測開始前の全LA日も対象）。
+    // 第3層: 学習量×較正値。受験記録の推定は詳細ログの抽出時点で止まる（今日・抽出後の日が
+    // 抜ける）ため、当日も更新される学習量から換算して埋める。
+    //  a) 教科別: coursePassedHist の隣接日差分 × 教科別 秒/教材（教材の重さの教科差を反映）
+    //  b) 全体: LA × 秒/学習（較正は 実測日 Σ実測/ΣLA を優先、無ければ遡及総量/ΣLA）
     const laMap = new Map<string, number>();
     for (const p of seriesLa) laMap.set(p.date, p.amount);
     for (const d of data.daily_amount) if (d.amount != null) laMap.set(d.date, d.amount);
-    const secPerLA = calibrateSecPerLA(
-      estDaily,
-      [...laMap.entries()].map(([date, amount]) => ({ date, amount }))
+    const laArr = [...laMap.entries()].map(([date, amount]) => ({ date, amount }));
+    const todayIsoT = isoDate(zenToday());
+    const secPerLA = calibrateSecPerLA(laArr, st, estDaily, totalRetroSeconds(skelsT, rlogT, wtT), todayIsoT);
+    const conv = secPerMaterialByCourse(
+      volsT.map((v) => ({ id: v.id, totalMaterials: v.totalMaterials, movieSeconds: v.total.movieSeconds, testCount: v.total.testCount, reportCount: v.total.reportCount })),
+      wtT
     );
+    const cphMap: Record<string, Record<string, number>> = {};
+    for (const p of cphT) cphMap[p.date] = p.byCourse as unknown as Record<string, number>;
+    const estCourse = estimateDailyByCourseDelta(cphMap, conv);
     const combined: Record<string, number> = {};
     const estSet = new Set<string>();
-    const allDays = new Set([...Object.keys(st), ...Object.keys(estDaily), ...(secPerLA ? laMap.keys() : [])]);
+    const allDays = new Set([...Object.keys(st), ...Object.keys(estDaily), ...Object.keys(estCourse), ...(secPerLA ? laMap.keys() : [])]);
     for (const d of allDays) {
       const m = st[d] ?? 0;
       const e = estDaily[d] ?? 0;
+      const ec = estCourse[d] ?? 0;
       const f = secPerLA ? (laMap.get(d) ?? 0) * secPerLA : 0;
-      combined[d] = Math.max(m, e, f);
+      combined[d] = Math.max(m, e, ec, f);
       if (combined[d] > m) estSet.add(d);
     }
     return { combined, estSet, hoursMeasured, hoursEst: estimateHourlyStudySeconds(rlogT, movT, wtT) };

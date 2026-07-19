@@ -51,6 +51,18 @@ export function __setMockVolumes(v: CourseVol[]): void {
   mock = v;
 }
 
+/** ネットワークを叩かず、保存済みキャッシュのコース集計だけ返す（学習時間の換算用。無ければ空）。 */
+export async function getCachedCourseVolumes(): Promise<CourseVol[]> {
+  if (mock) return mock;
+  try {
+    const r = await chrome.storage.local.get([CACHE_KEY]);
+    const c = (r?.[CACHE_KEY] as CourseCache) ?? {};
+    return Object.values(c).map((x) => x.vol);
+  } catch {
+    return [];
+  }
+}
+
 const zero = (): Metrics => ({ movieSeconds: 0, movieCount: 0, testCount: 0, reportCount: 0, testQuestions: 0, reportQuestions: 0 });
 function addSection(m: Metrics, s: Section): void {
   if (s.resource_type === 'movie') {

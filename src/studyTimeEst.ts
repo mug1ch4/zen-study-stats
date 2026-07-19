@@ -8,7 +8,7 @@
 //           初回と最新が別時刻なら別受験として各1回ぶん計上。
 import { zenTodayISO } from './format';
 import type { ResultEntry } from './resultLog';
-import type { MovieEvent } from './movieInterp';
+import type { MovieEvent, ChapterSkels } from './movieInterp';
 import type { WorkTimes } from './history';
 
 // 実測が無いときの既定所要（分）。ユーザー実測（min/n）が貯まり次第そちらを使う。
@@ -63,25 +63,101 @@ export function estimateHourlyStudySeconds(entries: ResultEntry[], movieEvents: 
   return out;
 }
 
-// 第3層フォールバック: 学習数(LA)×「秒/学習」。受験記録ベースの推定は詳細ログの抽出時点で
-// 止まる（今日の分が入らない）ため、LA（サーバ集計・当日も更新される）から日の時間を近似する。
-// 「秒/学習」はユーザー自身のデータで較正: 受験記録推定が十分ある日の Σ推定秒/ΣLA。
+// ---- 第3層フォールバック: 学習量×換算値 ----
+// 受験記録ベースの推定は詳細ログの抽出時点で止まる（今日・未抽出期間が抜ける）ため、
+// 「当日も更新される学習量」を時間に換算して埋める。換算値はユーザー自身のデータで較正する。
 const SEC_PER_LA_MIN = 60; // 較正のクランプ（1〜10分/学習）: 異常データで暴れない
 const SEC_PER_LA_MAX = 600;
+const clampSec = (v: number): number => Math.min(SEC_PER_LA_MAX, Math.max(SEC_PER_LA_MIN, v));
 
-/** 「秒/学習」の較正値。両方が十分ある日（LA>0 かつ 推定>0）が3日未満なら null（作らない）。 */
-export function calibrateSecPerLA(estDaily: Record<string, number>, la: { date: string; amount: number }[]): number | null {
-  let laSum = 0;
-  let estSum = 0;
-  let days = 0;
+/** 遡及分の総学習秒: passed動画の総実尺（skels・日割り不要の既知量）＋ 受験回数×平均所要。
+ *  日別に按分した estimateDailyStudySeconds と違い、補間できなかった動画も全て入る（較正の分子用）。 */
+export function totalRetroSeconds(skels: ChapterSkels, entries: ResultEntry[], wt: WorkTimes): number {
+  let sec = 0;
+  for (const s of Object.values(skels)) for (const x of s.sections) if (x.kind === 'movie' && x.passed) sec += x.len;
+  for (const a of attemptEvents(entries)) sec += avgWorkMinutes(wt, a.courseId, a.kind) * 60;
+  return sec;
+}
+
+/** 「秒/学習(LA)」の較正値。
+ *  1) 丸一日実測できた日（measured>0 かつ 受験推定以上・今日を除く）が3日以上 → Σ実測/ΣLA（行動の真値）
+ *  2) 無ければ全期間トータル: totalRetroSeconds / ΣLA（動画の日割り不能でも総量は既知）
+ *  どちらも作れなければ null（無理に表示しない）。 */
+export function calibrateSecPerLA(
+  la: { date: string; amount: number }[],
+  measured: Record<string, number>,
+  estDaily: Record<string, number>,
+  retroTotalSec: number,
+  todayISO: string
+): number | null {
+  let mLa = 0;
+  let mSec = 0;
+  let mDays = 0;
   for (const p of la) {
-    const e = estDaily[p.date] ?? 0;
-    if (p.amount > 0 && e > 0) {
-      laSum += p.amount;
-      estSum += e;
-      days++;
+    if (p.date >= todayISO || p.amount <= 0) continue;
+    const m = measured[p.date] ?? 0;
+    if (m > 0 && m >= (estDaily[p.date] ?? 0)) {
+      mLa += p.amount;
+      mSec += m;
+      mDays++;
     }
   }
-  if (days < 3 || laSum < 30) return null;
-  return Math.min(SEC_PER_LA_MAX, Math.max(SEC_PER_LA_MIN, estSum / laSum));
+  if (mDays >= 3 && mLa >= 30) return clampSec(mSec / mLa);
+  const laSum = la.filter((p) => p.date < todayISO).reduce((a, p) => a + p.amount, 0);
+  if (laSum >= 30 && retroTotalSec > 0) return clampSec(retroTotalSec / laSum);
+  return null;
+}
+
+// ---- 教科構成を考慮した換算（コース集計キャッシュがあるとき）----
+// 教材1つの重さは教科で大きく違う（長い動画の英語 vs 短い特別活動）。当日どの教科を
+// 進めたかは coursePassedHist（ライブupsert）で分かるので、教科別の 秒/教材 で換算する。
+export interface CourseVolLite {
+  id: number;
+  totalMaterials: number;
+  movieSeconds: number;
+  testCount: number;
+  reportCount: number;
+}
+
+export function secPerMaterialByCourse(vols: CourseVolLite[], wt: WorkTimes): { byCourse: Map<number, number>; global: number | null } {
+  const byCourse = new Map<number, number>();
+  let secSum = 0;
+  let matSum = 0;
+  for (const v of vols) {
+    if (v.totalMaterials <= 0) continue;
+    const sec = v.movieSeconds + v.testCount * avgWorkMinutes(wt, v.id, 'test') * 60 + v.reportCount * avgWorkMinutes(wt, v.id, 'report') * 60;
+    byCourse.set(v.id, sec / v.totalMaterials);
+    secSum += sec;
+    matSum += v.totalMaterials;
+  }
+  return { byCourse, global: matSum > 0 ? secSum / matSum : null };
+}
+
+/** 教科別passed履歴の隣接日差分 × 教科別秒/教材 → 日別推定秒。
+ *  隣接しない日の差分は日割り不明なのでスキップ（誤帰属を作らない）。 */
+export function estimateDailyByCourseDelta(
+  cph: Record<string, Record<string, number>>,
+  conv: { byCourse: Map<number, number>; global: number | null }
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  const dates = Object.keys(cph).sort();
+  const nextDayOf = (iso: string): string => {
+    const d = new Date(iso + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  };
+  for (let i = 1; i < dates.length; i++) {
+    const d = dates[i];
+    const p = dates[i - 1];
+    if (nextDayOf(p) !== d) continue; // 隣接日のみ（間の空白日へ按分しない）
+    let sec = 0;
+    const cur = cph[d];
+    const prev = cph[p];
+    for (const [cid, val] of Object.entries(cur)) {
+      const diff = Math.max(0, val - (prev[cid] ?? 0));
+      if (diff > 0) sec += diff * (conv.byCourse.get(Number(cid)) ?? conv.global ?? 0);
+    }
+    if (sec > 0) out[d] = sec;
+  }
+  return out;
 }

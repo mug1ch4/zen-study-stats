@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { avgWorkMinutes, estimateDailyStudySeconds, estimateHourlyStudySeconds, calibrateSecPerLA } from '../src/studyTimeEst';
+import { avgWorkMinutes, estimateDailyStudySeconds, estimateHourlyStudySeconds, calibrateSecPerLA, secPerMaterialByCourse, estimateDailyByCourseDelta } from '../src/studyTimeEst';
 import type { ResultEntry } from '../src/resultLog';
 import type { MovieEvent } from '../src/movieInterp';
 import type { WorkTimes } from '../src/history';
@@ -43,30 +43,58 @@ describe('estimateDailyStudySeconds', () => {
 });
 
 describe('calibrateSecPerLA', () => {
-  it('推定とLAが両方ある日から Σ推定秒/ΣLA を算出（クランプ付き）', () => {
-    const est = { '2026-07-10': 3000, '2026-07-11': 6000, '2026-07-12': 3000 };
-    const la = [
-      { date: '2026-07-10', amount: 10 },
-      { date: '2026-07-11', amount: 20 },
-      { date: '2026-07-12', amount: 10 },
-      { date: '2026-07-13', amount: 50 }, // 推定なし → 較正から除外
-    ];
-    expect(calibrateSecPerLA(est, la)).toBeCloseTo(300, 5); // 12000/40
+  const TODAY = '2026-07-19';
+  const la3 = [
+    { date: '2026-07-10', amount: 10 },
+    { date: '2026-07-11', amount: 20 },
+    { date: '2026-07-12', amount: 10 },
+  ];
+  it('実測日が3日以上あれば Σ実測/ΣLA を優先（行動の真値）', () => {
+    const measured = { '2026-07-10': 3000, '2026-07-11': 6000, '2026-07-12': 3000 };
+    expect(calibrateSecPerLA(la3, measured, {}, 999999, TODAY)).toBeCloseTo(300, 5); // 12000/40
   });
-  it('データ不足（3日未満 or ΣLA<30）なら null', () => {
-    expect(calibrateSecPerLA({ '2026-07-10': 3000 }, [{ date: '2026-07-10', amount: 40 }])).toBeNull();
-    expect(
-      calibrateSecPerLA({ '2026-07-10': 600, '2026-07-11': 600, '2026-07-12': 600 }, [
-        { date: '2026-07-10', amount: 5 },
-        { date: '2026-07-11', amount: 5 },
-        { date: '2026-07-12', amount: 5 },
-      ])
-    ).toBeNull();
+  it('実測日が足りなければ 遡及総量/ΣLA（動画実尺は日割り不要の既知量）', () => {
+    expect(calibrateSecPerLA(la3, {}, {}, 8000, TODAY)).toBeCloseTo(200, 5); // 8000/40
   });
-  it('クランプ: 60〜600 秒/学習', () => {
-    const la3 = (amount: number) => ['2026-07-10', '2026-07-11', '2026-07-12'].map((date) => ({ date, amount }));
-    expect(calibrateSecPerLA({ '2026-07-10': 10, '2026-07-11': 10, '2026-07-12': 10 }, la3(20))).toBe(60);
-    expect(calibrateSecPerLA({ '2026-07-10': 99999, '2026-07-11': 99999, '2026-07-12': 99999 }, la3(20))).toBe(600);
+  it('今日の実測（部分日）は較正から除外', () => {
+    const la = [...la3, { date: TODAY, amount: 100 }];
+    const measured = { [TODAY]: 60 }; // 今日だけ → 実測較正は成立しない
+    expect(calibrateSecPerLA(la, measured, {}, 8000, TODAY)).toBeCloseTo(200, 5); // 分母もΣLA(昨日まで)=40
+  });
+  it('データ不足なら null・クランプ 60〜600', () => {
+    expect(calibrateSecPerLA([{ date: '2026-07-10', amount: 5 }], {}, {}, 0, TODAY)).toBeNull();
+    expect(calibrateSecPerLA(la3, {}, {}, 100, TODAY)).toBe(60);
+    expect(calibrateSecPerLA(la3, {}, {}, 9999999, TODAY)).toBe(600);
+  });
+});
+
+describe('secPerMaterialByCourse / estimateDailyByCourseDelta', () => {
+  it('教科別の秒/教材で隣接日差分を換算（教材の重さの教科差を反映）', () => {
+    // 英語風: 動画60分+テスト0 ÷ 10教材 = 360秒/教材。特別活動風: 動画5分 ÷ 10教材 = 30→clampなし(換算はそのまま)
+    const conv = secPerMaterialByCourse(
+      [
+        { id: 1, totalMaterials: 10, movieSeconds: 3600, testCount: 0, reportCount: 0 },
+        { id: 2, totalMaterials: 10, movieSeconds: 300, testCount: 0, reportCount: 0 },
+      ],
+      {}
+    );
+    expect(conv.byCourse.get(1)).toBeCloseTo(360, 5);
+    expect(conv.byCourse.get(2)).toBeCloseTo(30, 5);
+    const est = estimateDailyByCourseDelta(
+      {
+        '2026-07-18': { '1': 5, '2': 0 },
+        '2026-07-19': { '1': 7, '2': 10 }, // 英語+2・特別活動+10
+        '2026-07-21': { '1': 9, '2': 10 }, // 7/20が無い＝隣接でない → スキップ
+      },
+      conv
+    );
+    expect(est['2026-07-19']).toBeCloseTo(2 * 360 + 10 * 30, 5);
+    expect(est['2026-07-21']).toBeUndefined();
+  });
+  it('未知の教科は全体平均で換算', () => {
+    const conv = secPerMaterialByCourse([{ id: 1, totalMaterials: 10, movieSeconds: 3600, testCount: 0, reportCount: 0 }], {});
+    const est = estimateDailyByCourseDelta({ '2026-07-18': { '9': 0 }, '2026-07-19': { '9': 2 } }, conv);
+    expect(est['2026-07-19']).toBeCloseTo(2 * 360, 5);
   });
 });
 
