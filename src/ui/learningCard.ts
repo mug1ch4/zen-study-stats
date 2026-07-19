@@ -12,7 +12,7 @@ import { reportDeadlineStatus, type DeadlineStatus } from '../deadlines';
 import { computeCourseDeadlineRisks, type CourseDeadlineRisk } from '../deadlineRisk';
 import { computeCoursePaces, overallForecast } from '../coursePace';
 import { fetchMonthlyReport } from '../api';
-import { zenWeekStartISO } from '../format';
+import { zenWeekStartISO, zenTodayISO } from '../format';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, deadlineTendency, coursePaceTendency, type Section } from '../analysis';
 import { buildPlanIcs, downloadText } from '../ics';
 import { getNearDoneChapters } from '../courseApi';
@@ -509,27 +509,47 @@ async function renderPredictTab(
       fallbackPerDay = recentLearn.length ? recentLearn.reduce((a, p) => a + p.amount, 0) / recentLearn.length : undefined;
     }
 
-    // 日次サンプルは必修の教材消化(passed_materials)の差分を優先（非必修を含む学習数は使わない）。
-    // materialHistory が2点以上あればそれで組み、無いときだけ learning_amounts(合算)に退避。
-    let dailySamples: { weekday: number; value: number }[];
-    if (mh.series.length >= 2) {
-      dailySamples = [];
-      for (let i = 1; i < mh.series.length; i++) {
-        const prev = mh.series[i - 1];
-        const cur = mh.series[i];
-        // 【頑健フォールバック】必修コースが年度で入替わると passed/total が不連続に変化する。
-        // その区間の差分は「学習量」ではないのでサンプルから除外する。構造を仮定せず、次の
-        // どれかに当てはまれば捨てる（検知ではなく防御）:
-        //   (a) total が変化した（記録がある場合）＝コースセットが変わった
-        //   (b) passed が減少した＝科目リセット/入替（total未記録の旧データでも効く）
-        if (prev.total !== undefined && cur.total !== undefined && prev.total !== cur.total) continue;
-        if (cur.passed < prev.passed) continue;
-        const gap = Math.max(1, Math.round((new Date(cur.date).getTime() - new Date(prev.date).getTime()) / 86400000));
-        dailySamples.push({ weekday: new Date(cur.date + 'T12:00:00').getDay(), value: (cur.passed - prev.passed) / gap });
-      }
-    } else {
-      dailySamples = merged.map((p) => ({ weekday: new Date(p.date + 'T12:00:00').getDay(), value: p.amount }));
+    // 必修コースの受験アンカー(resultLog)＋動画補間イベント。dailySamples・後方外挿の両方で使う。
+    let requiredIds: Set<number> | null = null;
+    try {
+      requiredIds = await getRequiredCourseIds();
+    } catch {
+      /* 判定不可＝必修フィルタなし（安全側で全件） */
     }
+    const reqLog = requiredIds ? subjResultLog.filter((e) => requiredIds!.has(e.courseId)) : subjResultLog;
+    const reqMov = requiredIds ? subjMovieEvents.filter((m) => requiredIds!.has(m.courseId)) : subjMovieEvents;
+    const reqEvents = completionEvents(reqLog, reqMov);
+
+    // 日次サンプル（必修の消化・モンテカルロ/曜日重み用）。モンテカルロは要5サンプル。
+    // 正確な源を優先しつつ、5に届く源を選ぶ。どれも届かなければ最も密な源で予測を成立させる:
+    //   ① materialHistory の passed 差分（最も正確・要スナップ蓄積）
+    //   ② 必修の受験アンカー(resultLog)＋動画補間の日別完了数（必修のみ・導入以前も含む）
+    //   ③ learning_amounts(合算・暫定)
+    // 【MH:①】
+    const mhSamples: { weekday: number; value: number }[] = [];
+    for (let i = 1; i < mh.series.length; i++) {
+      const prev = mh.series[i - 1];
+      const cur = mh.series[i];
+      // 年度入替で passed/total が不連続に変化した区間は「学習量」でないので除外（(a)total変化 (b)passed減少）。
+      if (prev.total !== undefined && cur.total !== undefined && prev.total !== cur.total) continue;
+      if (cur.passed < prev.passed) continue;
+      const gap = Math.max(1, Math.round((new Date(cur.date).getTime() - new Date(prev.date).getTime()) / 86400000));
+      mhSamples.push({ weekday: new Date(cur.date + 'T12:00:00').getDay(), value: (cur.passed - prev.passed) / gap });
+    }
+    // 【アンカー:②】受験日ごとの完了数
+    const byDay = new Map<string, number>();
+    for (const ev of reqEvents) {
+      const d = zenTodayISO(ev.at * 1000);
+      byDay.set(d, (byDay.get(d) ?? 0) + 1);
+    }
+    const anchorSamples = [...byDay.entries()].map(([date, v]) => ({ weekday: new Date(date + 'T12:00:00').getDay(), value: v }));
+    // 【LA:③】
+    const laSamples = merged.map((p) => ({ weekday: new Date(p.date + 'T12:00:00').getDay(), value: p.amount }));
+    // 選択: 5サンプル以上に届く最も正確な源（MH→アンカー）。どれも<5なら最も密な源で予測を成立させる。
+    let dailySamples: { weekday: number; value: number }[];
+    if (mhSamples.length >= 5) dailySamples = mhSamples;
+    else if (anchorSamples.length >= 5) dailySamples = anchorSamples;
+    else dailySamples = [mhSamples, anchorSamples, laSamples].sort((a, b) => b.length - a.length)[0] ?? [];
 
     // 曜日別ペース: dailySamples（必修の教材消化・上で構築）から算出。
     // 予測カーブの曜日重みが非必修の曜日偏りで歪むのを防ぐ（合算 merged は使わない）。
@@ -565,18 +585,9 @@ async function renderPredictTab(
       recentMat.length >= 2
         ? recentMat.map((p) => ({ date: p.date, remaining: Math.max(0, (p.total ?? total) - p.passed) }))
         : [{ date: isoDate(zenToday()), remaining: total - passed }];
-    // 過去の遡及実績: 必修コースの受験アンカー(resultLog)＋動画補間から後方外挿（導入以前も含む）。
-    // materialHistory が薄い/穴あきの過去を点線で埋める（教科別バーンダウンと同じ最新手法）。
-    let overallRetro: { date: string; remaining: number }[] = [];
-    try {
-      const requiredIds = await getRequiredCourseIds();
-      const reqLog = subjResultLog.filter((e) => requiredIds.has(e.courseId));
-      const reqMov = subjMovieEvents.filter((m) => requiredIds.has(m.courseId));
-      const evs = completionEvents(reqLog, reqMov);
-      overallRetro = courseRetroRemaining(total, passed, evs);
-    } catch {
-      /* 遡及は補助。失敗しても実績カーブは出す */
-    }
+    // 過去の遡及実績: 必修の受験アンカー(resultLog)＋動画補間からの後方外挿（導入以前も含む）。
+    // materialHistory が薄い/穴あきの過去を点線で埋める（上で計算した reqEvents を再利用）。
+    const overallRetro: { date: string; remaining: number }[] = reqEvents.length ? courseRetroRemaining(total, passed, reqEvents) : [];
     const savedTarget = await getTargetDate();
     const electivesNote =
       report.takingCourseCount > report.requiredCourseCount
