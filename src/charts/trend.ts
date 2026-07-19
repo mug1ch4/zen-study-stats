@@ -7,9 +7,9 @@ const PLOT_W = W - L - R;
 const PLOT_H = H - T - B;
 const BASE_Y = T + PLOT_H;
 
-/** 長期トレンド。day: 日別+7日移動平均 / week・month: 合計。 */
-export function renderTrend(points: TrendPoint[], mode: TrendMode, tip: Tooltip): SVGElement {
-  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': '学習数トレンド' });
+/** 長期トレンド。day: 日別+7日移動平均 / week・month: 合計。fmt 指定時は値表記を差し替え（例: 分→1h23m）。 */
+export function renderTrend(points: TrendPoint[], mode: TrendMode, tip: Tooltip, fmt?: (v: number) => string): SVGElement {
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': fmt ? '学習時間トレンド' : '学習数トレンド' });
   if (!points.length) return svg;
 
   const n = points.length;
@@ -22,7 +22,7 @@ export function renderTrend(points: TrendPoint[], mode: TrendMode, tip: Tooltip)
   for (const v of [0, Math.round(maxV)]) {
     const yy = y(v);
     svg.appendChild(s('line', { x1: L, y1: yy, x2: L + PLOT_W, y2: yy, stroke: 'var(--border)', 'stroke-width': 1 }));
-    svg.appendChild(s('text', { x: L - 5, y: yy + 3, 'text-anchor': 'end', 'font-size': 9, fill: 'var(--faint)' }, [String(v)]));
+    svg.appendChild(s('text', { x: L - 5, y: yy + 3, 'text-anchor': 'end', 'font-size': 9, fill: 'var(--faint)' }, [v > 0 && fmt ? fmt(v) : String(v)]));
   }
 
   // 移動平均（破線・day のみ）
@@ -57,8 +57,8 @@ export function renderTrend(points: TrendPoint[], mode: TrendMode, tip: Tooltip)
       onmousemove: (e: Event) => {
         const me = e as MouseEvent;
         const p = points[i];
-        const ma = mode === 'day' && p.ma !== undefined ? ` · 7日平均 ${p.ma.toFixed(1)}` : '';
-        tip.show(me.clientX, me.clientY, `<b>${p.label}</b> ${p.value}件${ma}`);
+        const ma = mode === 'day' && p.ma !== undefined ? ` · 7日平均 ${fmt ? fmt(Math.round(p.ma)) : p.ma.toFixed(1)}` : '';
+        tip.show(me.clientX, me.clientY, `<b>${p.label}</b> ${fmt ? fmt(p.value) : `${p.value}件`}${ma}`);
       },
       onmouseleave: () => tip.hide(),
     }));

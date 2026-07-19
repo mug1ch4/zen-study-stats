@@ -137,6 +137,7 @@ export const CSS = `
   padding: 4px 10px; cursor: pointer; font-family: inherit;
 }
 .zss-seg button.on { background: var(--primary); color: #fff; }
+.zss-seg-row { display: inline-flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .zss-tsub { display: flex; justify-content: flex-end; margin: 2px 0 4px; }
 .zss-tsub-note { font-size: 11px; color: var(--faint); margin: 2px 0 4px; }
 .zss-cal-wrap { overflow-x: auto; max-width: 100%; margin-top: 2px; padding-bottom: 2px; }

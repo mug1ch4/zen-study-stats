@@ -18,13 +18,13 @@ function fillFor(amount: number | null, max: number): string {
   return `var(--cal-${level})`;
 }
 
-/** GitHub風の学習カレンダー。未記録=グレー / 0=淡青 / 1-4=逐次青。 */
-export function renderCalendar(data: CalendarData, tip: Tooltip): SVGElement {
+/** GitHub風の学習カレンダー。未記録=グレー / 0=淡青 / 1-4=逐次青。fmt 指定時は値表記を差し替え。 */
+export function renderCalendar(data: CalendarData, tip: Tooltip, fmt?: (v: number) => string): SVGElement {
   const W = LEFT + data.weeks * STEP + 2;
   const H = TOP + 7 * STEP;
   // 引き伸ばさず実寸(px)で描く。GitHub同様、幅が余っても拡大しない・足りなければ親を横スクロール。
   const svg = s('svg', {
-    viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': '学習カレンダー',
+    viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': fmt ? '学習時間カレンダー' : '学習カレンダー',
   });
   (svg as SVGElement & { style: CSSStyleDeclaration }).style.maxWidth = 'none';
 
@@ -60,7 +60,7 @@ export function renderCalendar(data: CalendarData, tip: Tooltip): SVGElement {
         const me = e as MouseEvent;
         const d = parseDate(c.date);
         const wd = ['日', '月', '火', '水', '木', '金', '土'][c.weekday];
-        const body = c.amount === null ? '記録なし' : `${c.amount}件`;
+        const body = c.amount === null ? '記録なし' : fmt ? fmt(c.amount) : `${c.amount}件`;
         tip.show(me.clientX, me.clientY, `<b>${d.getMonth() + 1}/${d.getDate()}(${wd})</b> ${body}`);
       },
       onmouseleave: () => tip.hide(),

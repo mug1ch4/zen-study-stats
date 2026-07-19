@@ -290,12 +290,13 @@ async function renderRecentTab(
     ])
   );
   // --- 学習時間（この端末の実測・非同期） ---
+  const studyTimePromise = getStudyTime().catch(() => ({}) as Record<string, number>);
+  const fmtMin = (m: number): string => durationStr(m * 60);
   const stWrap = h('div', {}, []);
   pane.appendChild(stWrap);
   void (async () => {
-    const st = await getStudyTime();
+    const st = await studyTimePromise;
     const stKeys = Object.keys(st).sort();
-    const fmtMin = (m: number): string => durationStr(m * 60);
     if (!stKeys.length) {
       stWrap.appendChild(
         section('学習時間', 'この端末で拡張が実測します（可視タブで操作中・動画再生中のみ加算）', [
@@ -349,44 +350,68 @@ async function renderRecentTab(
   }
 
   // 長期チャートはセグメントで1枚ずつ表示（縦積みを回避）: カレンダー / トレンド / 時間帯 / 曜日。
+  // 親トグル（学習数/学習時間）でデータ源を切替: 学習時間は studyTime（この端末の実測・分）を使う。
   const longView = h('div', {}, []);
   const views: [string, string][] = [['cal', 'カレンダー'], ['trend', 'トレンド'], ['hour', '時間帯'], ['weekday', '曜日']];
   const segBtns: HTMLElement[] = [];
   const cache: Record<string, HTMLElement> = {};
   let curView = hasLong ? 'cal' : 'weekday';
+  type Basis = 'amount' | 'time';
+  let basis: Basis = 'amount';
+  const stMapT = await studyTimePromise;
+  const timeSeries = Object.keys(stMapT)
+    .sort()
+    .map((date) => ({ date, amount: Math.round((stMapT[date] ?? 0) / 60) }));
+  const seriesOf = (b: Basis): { date: string; amount: number }[] => (b === 'time' ? timeSeries : series);
+  const fmtOf = (b: Basis): ((v: number) => string) | undefined => (b === 'time' ? fmtMin : undefined);
+  const hasData = (b: Basis): boolean => (b === 'time' ? timeSeries.length > 0 : hasLong);
+  const emptyMsg = (b: Basis, what: string): HTMLElement =>
+    h('div', { class: 'zss-empty' }, [
+      b === 'time' ? `学習時間の記録（この端末で計測）が数日貯まると${what}が表示されます。` : `記録が数日貯まると${what}が表示されます。`,
+    ]);
 
   const buildCal = (): HTMLElement =>
-    hasLong
+    hasData(basis)
       ? h('div', {}, [
           h('div', { class: 'zss-tsub-note' }, ['記録が増えるほど埋まります']),
-          h('div', { class: 'zss-cal-wrap' }, [renderCalendar(calendarData(series), tip)]),
+          h('div', { class: 'zss-cal-wrap' }, [renderCalendar(calendarData(seriesOf(basis)), tip, fmtOf(basis))]),
           calLegend(),
         ])
-      : h('div', { class: 'zss-empty' }, ['記録が数日貯まるとカレンダーが表示されます。']);
+      : emptyMsg(basis, 'カレンダー');
 
+  // 学習時間の曜日別: 直近2週の実測から WeekdayStat を構成（学習数は従来どおり14日窓のLAから）
+  const timeWeekdayStats = (): { weekday: number; avg: number | null; samples: { date: string; amount: number }[] }[] => {
+    const recent = timeSeries.slice(-14);
+    return Array.from({ length: 7 }, (_, wd) => {
+      const samples = recent.filter((p) => new Date(p.date + 'T12:00:00').getDay() === wd);
+      const avg = samples.length ? samples.reduce((a, p) => a + p.amount, 0) / samples.length : null;
+      return { weekday: wd, avg, samples };
+    });
+  };
   const buildWeekday = (): HTMLElement =>
     h('div', {}, [
       h('div', { class: 'zss-tsub-note' }, ['各曜日 = 直近2週ぶんの平均']),
-      wrapChart(renderWeekdayBars(computeWeekdayStats(data), tip)),
+      wrapChart(renderWeekdayBars(basis === 'time' ? timeWeekdayStats() : computeWeekdayStats(data), tip, fmtOf(basis))),
     ]);
 
   const buildTrend = (): HTMLElement => {
-    if (!hasLong) return h('div', { class: 'zss-empty' }, ['記録が数日貯まるとトレンドが表示されます。']);
+    if (!hasData(basis)) return emptyMsg(basis, 'トレンド');
+    const b = basis;
     let mode: TrendMode = 'week'; // 直近14日の日別バーと差別化して既定は週合計
-    const trendChart = h('div', { class: 'zss-chart' }, [renderTrend(trendPoints(series, mode), mode, tip)]);
+    const trendChart = h('div', { class: 'zss-chart' }, [renderTrend(trendPoints(seriesOf(b), mode), mode, tip, fmtOf(b))]);
     const seg = h('div', { class: 'zss-seg' }, [] as HTMLElement[]);
     const modes: [TrendMode, string][] = [['day', '日'], ['week', '週'], ['month', '月']];
     const btns: HTMLElement[] = [];
     for (const [m, label] of modes) {
-      const b = h('button', m === mode ? { class: 'on' } : {}, [label]);
-      b.addEventListener('click', () => {
+      const bt = h('button', m === mode ? { class: 'on' } : {}, [label]);
+      bt.addEventListener('click', () => {
         mode = m;
         btns.forEach((x, i) => x.classList.toggle('on', modes[i][0] === mode));
         trendChart.textContent = '';
-        trendChart.appendChild(renderTrend(trendPoints(series, mode), mode, tip));
+        trendChart.appendChild(renderTrend(trendPoints(seriesOf(b), mode), mode, tip, fmtOf(b)));
       });
-      btns.push(b);
-      seg.appendChild(b);
+      btns.push(bt);
+      seg.appendChild(bt);
     }
     return h('div', {}, [h('div', { class: 'zss-tsub' }, [seg]), trendChart]);
   };
@@ -455,29 +480,52 @@ async function renderRecentTab(
   };
 
   const showView = async (v: string): Promise<void> => {
+    // 時間帯ビューは受験時刻ベース＝学習時間モードには無い → カレンダーへ退避
+    if (basis === 'time' && v === 'hour') v = 'cal';
     curView = v;
     segBtns.forEach((x, i) => x.classList.toggle('on', views[i][0] === v));
-    if (!cache[v]) {
-      cache[v] =
+    const key = `${basis}:${v}`;
+    if (!cache[key]) {
+      cache[key] =
         v === 'hour' ? await buildHour()
         : v === 'trend' ? buildTrend()
         : v === 'weekday' ? buildWeekday()
         : buildCal();
     }
     longView.textContent = '';
-    longView.appendChild(cache[v]);
+    longView.appendChild(cache[key]);
   };
 
   const segOuter = h('div', { class: 'zss-seg' }, [] as HTMLElement[]);
+  const hourBtnIdx = views.findIndex(([v]) => v === 'hour');
   for (const [v, label] of views) {
     const b = h('button', {}, [label]);
     b.addEventListener('click', () => void showView(v));
     segBtns.push(b);
     segOuter.appendChild(b);
   }
+  // 親トグル: データ源（学習数=全学習の件数 / 学習時間=この端末の実測）
+  const basisSeg = h('div', { class: 'zss-seg' }, [] as HTMLElement[]);
+  const bases: [Basis, string][] = [['amount', '学習数'], ['time', '学習時間']];
+  const basisBtns: HTMLElement[] = [];
+  const applyBasis = (b: Basis): void => {
+    basis = b;
+    basisBtns.forEach((x, i) => x.classList.toggle('on', bases[i][0] === b));
+    if (hourBtnIdx >= 0) segBtns[hourBtnIdx].style.display = b === 'time' ? 'none' : '';
+    void showView(curView);
+  };
+  for (const [b, label] of bases) {
+    const bt = h('button', b === basis ? { class: 'on' } : {}, [label]);
+    bt.addEventListener('click', () => applyBasis(b));
+    basisBtns.push(bt);
+    basisSeg.appendChild(bt);
+  }
   longWrap.appendChild(
     h('div', { class: 'zss-section' }, [
-      h('div', { class: 'zss-section-head' }, [h('div', { class: 'zss-section-title' }, ['傾向グラフ']), segOuter]),
+      h('div', { class: 'zss-section-head' }, [
+        h('div', { class: 'zss-section-title' }, ['傾向グラフ']),
+        h('div', { class: 'zss-seg-row' }, [basisSeg, segOuter]),
+      ]),
       longView,
     ])
   );

@@ -11,8 +11,8 @@ const BASE_Y = T + PLOT_H;
 // 月火水木金土日 の順で表示
 const ORDER = [1, 2, 3, 4, 5, 6, 0];
 
-/** 曜日別リズム（各曜日=2週ぶんの平均）。 */
-export function renderWeekdayBars(stats: WeekdayStat[], tip: Tooltip): SVGElement {
+/** 曜日別リズム（各曜日=2週ぶんの平均）。fmt 指定時は値表記を差し替え（例: 分→1h23m）。 */
+export function renderWeekdayBars(stats: WeekdayStat[], tip: Tooltip, fmt?: (v: number) => string): SVGElement {
   const byWeekday = new Map(stats.map((x) => [x.weekday, x]));
   const ordered = ORDER.map((w) => byWeekday.get(w)!).filter(Boolean);
 
@@ -35,7 +35,7 @@ export function renderWeekdayBars(stats: WeekdayStat[], tip: Tooltip): SVGElemen
         x: cx - barW / 2, y: BASE_Y - bh, width: barW, height: bh, rx: 3, fill: 'var(--primary)',
         class: 'zss-abar', style: `animation-delay:${i * 30}ms`,
       }));
-      const label = Number.isInteger(val) ? String(val) : val.toFixed(1);
+      const label = fmt ? fmt(Math.round(val)) : Number.isInteger(val) ? String(val) : val.toFixed(1);
       svg.appendChild(s('text', {
         x: cx, y: BASE_Y - bh - 6, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: 'var(--ink)',
       }, [label]));
@@ -52,8 +52,8 @@ export function renderWeekdayBars(stats: WeekdayStat[], tip: Tooltip): SVGElemen
         if (val === null) {
           tip.show(me.clientX, me.clientY, `<b>${wl}曜</b> サンプルなし`);
         } else {
-          const detail = st.samples.map((x) => `${shortDate(x.date)} ${x.amount}`).join(' · ');
-          tip.show(me.clientX, me.clientY, `<b>${wl}曜 平均 ${val.toFixed(1)}</b><br>${detail}`);
+          const detail = st.samples.map((x) => `${shortDate(x.date)} ${fmt ? fmt(x.amount) : x.amount}`).join(' · ');
+          tip.show(me.clientX, me.clientY, `<b>${wl}曜 平均 ${fmt ? fmt(Math.round(val)) : val.toFixed(1)}</b><br>${detail}`);
         }
       },
       onmouseleave: () => tip.hide(),
