@@ -124,13 +124,20 @@ const fmt = (sec: number): string => {
 
 function mountWidget(): void {
   if (widget) return;
-  const dark = 'position:fixed;right:16px;bottom:16px;z-index:2147482000;display:flex;align-items:center;gap:8px;' +
-    'background:rgba(17,24,33,.92);color:#fff;border:1px solid rgba(255,255,255,.14);border-radius:999px;' +
+  // 現在のテーマ（本拡張のダークモードは html.zss-dark で判定）に合わせて配色。
+  // 以前は常にダーク配色固定で、ライトテーマでも背景がグレーになっていた。
+  const isDark = document.documentElement.classList.contains('zss-dark');
+  const c = isDark
+    ? { bg: 'rgba(17,24,33,.94)', fg: '#e6ebf1', bd: 'rgba(255,255,255,.14)' }
+    : { bg: 'rgba(255,255,255,.97)', fg: '#173a5e', bd: 'rgba(0,0,0,.12)' };
+  const css =
+    'position:fixed;right:16px;bottom:16px;z-index:2147482000;display:flex;align-items:center;gap:8px;' +
+    `background:${c.bg};color:${c.fg};border:1px solid ${c.bd};border-radius:999px;` +
     'padding:8px 10px 8px 14px;font:12px/1.4 -apple-system,"Segoe UI","Hiragino Sans","Noto Sans JP",sans-serif;' +
     'box-shadow:0 4px 16px rgba(0,0,0,.25);user-select:none';
   widget = document.createElement('div');
   widget.id = 'zss-test-timer';
-  widget.style.cssText = dark;
+  widget.style.cssText = css;
   widget.title = 'この教材（未提出）の累計計測時間。提出すると所要時間として記録されます。タブが非表示の間は止まります。';
   label = document.createElement('b');
   label.style.cssText = 'font-size:13px;font-variant-numeric:tabular-nums';
