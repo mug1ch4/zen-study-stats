@@ -8,8 +8,9 @@ const PLOT_W = W - L - R;
 const PLOT_H = H - T - B;
 const BASE_Y = T + PLOT_H;
 
-/** 直近14日の日別バー + 2週平均の基準線。dataviz mark spec 準拠（細バー・データ端角丸・ベースライン固定）。 */
-export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip): SVGElement {
+/** 直近14日の日別バー + 2週平均の基準線。dataviz mark spec 準拠（細バー・データ端角丸・ベースライン固定）。
+ *  fmt 指定時は値の表示（棒上ラベル・ツールチップ・基準線）を差し替える（例: 分→"1h23m"）。 */
+export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip, fmt?: (v: number) => string): SVGElement {
   const n = days.length || 1;
   const slotW = PLOT_W / n;
   const barW = Math.min(26, slotW * 0.52);
@@ -33,7 +34,7 @@ export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip):
   svg.appendChild(s('text', {
     x: L + PLOT_W, y: avgY - 5, 'text-anchor': 'end',
     'font-size': 11, fill: 'var(--muted)',
-  }, [`2週平均 ${avg}`]));
+  }, [`2週平均 ${fmt ? fmt(avg) : avg}`]));
 
   days.forEach((d, i) => {
     const cx = L + i * slotW + slotW / 2;
@@ -70,7 +71,7 @@ export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip):
         'font-size': 10, 'font-weight': emphasize ? 700 : 500,
         fill: emphasize ? 'var(--ink)' : 'var(--muted)',
         class: 'zss-afade', style: `animation-delay:${i * 24 + 250}ms`, // 棒が伸びた後にふわっと
-      }, [isToday ? `今日 ${d.amount}` : `${d.amount}`]));
+      }, [isToday ? `今日 ${fmt ? fmt(d.amount) : d.amount}` : `${fmt ? fmt(d.amount) : d.amount}`]));
     }
 
     // 曜日ラベル
@@ -80,8 +81,9 @@ export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip):
     }, [weekdayLabel(d.date)]));
 
     // ホバー/フォーカス用の透明ヒット領域（列全体）。キーボードでも到達可能に。
-    const body = d.amount === null ? '記録なし' : `${d.amount}件 · 平均比 ${signed(d.amount - avg)}`;
-    const label = `${shortDate(d.date)}(${weekdayLabel(d.date)}) ${d.amount === null ? '記録なし' : d.amount + '件'}`;
+    const valStr = d.amount === null ? '記録なし' : fmt ? fmt(d.amount) : `${d.amount}件`;
+    const body = d.amount === null ? '記録なし' : fmt ? valStr : `${valStr} · 平均比 ${signed(d.amount - avg)}`;
+    const label = `${shortDate(d.date)}(${weekdayLabel(d.date)}) ${valStr}`;
     const tipHtml = `<b>${shortDate(d.date)}(${weekdayLabel(d.date)})</b> ${body}`;
     const hit = s('rect', {
       x: L + i * slotW, y: T, width: slotW, height: PLOT_H + B, fill: 'transparent',

@@ -226,21 +226,47 @@ export async function weekBaselinePassed(): Promise<number | null> {
   return pickWeekBaseline(series, zenWeekStartISO());
 }
 
+/** 週始点の解決（純関数）。
+ *  下界 = 前週末スナップ（それ未満にすると先週ぶんを今週へ二重計上）。
+ *  ただし前週末スナップは「拡張が最後に見た値」で、その後〜週明け初回オープンの間に
+ *  拡張外（他端末・5:00前の深夜学習）で消化した分を含まない。この不可視ぶんの週帰属は
+ *  LAで推定する: 始点 ≈ currentPassed − (今週のLA×必修シェア)。LAはサーバ集計で
+ *  zen-day境界（5:00）が正確なため、境界前の消化を今週に誤算入しない（今週>今日 問題の修正）。
+ *  laWeekReqEst=null（推定不能）なら従来どおり下界を使う。 */
+export function resolveWeekBase(currentPassed: number, snapBaseline: number | null, laWeekReqEst: number | null): number {
+  const lower = Math.min(currentPassed, snapBaseline ?? currentPassed);
+  if (laWeekReqEst === null) return lower;
+  const est = Math.round(currentPassed - Math.max(0, laWeekReqEst));
+  return Math.max(lower, Math.min(currentPassed, est));
+}
+
 /** 新しい週（日曜・5:00境界）になったら週始点を記録。rolled=切替が起きたか、prev=前週の始点。
  *  weekBaseline: 日次スナップから復元した「週開始時点の passed」。週の途中で始点が設置されると
  *  週初〜前日の消化分が週目標から漏れるため、復元値が小さければ始点を下方修復する
- *  （小さい方のみ採用＝過大計上はしない。学年ロールオーバーで passed が減った場合も current 側に収束）。
+ *  （resolveWeekBase の下界＝過大計上はしない。学年ロールオーバーで passed が減った場合も current 側に収束）。
+ *  laWeekReqEst: LAベースの「今週の必修消化」推定（resolveWeekBase 参照）。
  *  rolled は cur.week < week（真に前の週から切替）のみ true — 週開始曜日の変更などで
  *  保存キーが今週内の別日になっている場合は、誤った「先週のまとめ」を出さず黙って移行する。 */
-export async function ensureWeekStart(currentPassed: number, weekBaseline: number | null = null): Promise<{ rolled: boolean; prev: WeekStart | null }> {
+export async function ensureWeekStart(currentPassed: number, weekBaseline: number | null = null, laWeekReqEst: number | null = null): Promise<{ rolled: boolean; prev: WeekStart | null }> {
   if (memOverride) return { rolled: false, prev: null };
   try {
     const week = zenWeekStartISO();
-    const base = Math.min(currentPassed, weekBaseline ?? currentPassed);
+    const base = resolveWeekBase(currentPassed, weekBaseline, laWeekReqEst);
     const cur = await getWeekStart();
     if (!cur || cur.week !== week) {
       await chrome.storage.local.set({ [KEY_WEEKSTART]: { week, passed: base } });
       return { rolled: !!cur && cur.week < week, prev: cur }; // 初回設置(cur=null)はレビュー対象外
+    }
+    // 週の初日（日曜）のあいだは「今週==今日」の不変条件を dayStart で強制する。
+    // 帰属規則を今日の目標と揃える＝拡張外の消化ぶんはどちらも「過去」に帰属（92 vs 68 のズレ防止）。
+    if (todayISO() === week) {
+      const ds = await getDayStart();
+      if (ds && ds.date === week) {
+        const lower = Math.min(currentPassed, weekBaseline ?? currentPassed);
+        const sync = Math.max(lower, Math.min(currentPassed, ds.passed));
+        if (sync !== cur.passed) await chrome.storage.local.set({ [KEY_WEEKSTART]: { week, passed: sync } });
+        return { rolled: false, prev: null };
+      }
     }
     if (base < cur.passed) {
       await chrome.storage.local.set({ [KEY_WEEKSTART]: { week, passed: base } });

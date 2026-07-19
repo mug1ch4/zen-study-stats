@@ -7,6 +7,7 @@ import { __setMockVolumes } from '../src/courseStats';
 import { __setMockCourseMaterials } from '../src/courseApi';
 import { __setMockReport, __setMockLearning } from '../src/api';
 import { __setMockResultLog, __setMockChapterSkels, type ResultEntry } from '../src/resultLog';
+import { __setMockStudyTime } from '../src/studyTime';
 import { __setMockNow } from '../src/format';
 import type { ChapterSkels } from '../src/movieInterp';
 import demo from './demoData.json';
@@ -86,6 +87,9 @@ export function installMocks(): LearningAmounts {
 
   // 日別学習数（実データ）→ カレンダー/トレンド/ストリーク
   __setMockHistory(demo.history as History);
+
+  // 学習時間（デモ用の概算: 学習数×3分。実運用はアクティブタイム実測が貯まる）
+  __setMockStudyTime(Object.fromEntries(Object.entries(demo.history as History).map(([d, n]) => [d, (n as number) * 180])));
 
   // 時間帯（実データ）
   const hstat = demo.hourStats as { study?: number[]; visit?: number[] };

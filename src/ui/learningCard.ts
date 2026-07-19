@@ -1,6 +1,7 @@
 import type { LearningAmounts } from '../api';
 import { computeKpis, computeWeekdayStats } from '../derive';
-import { weekdayLabel, shortDate, zenToday, nowMs } from '../format';
+import { weekdayLabel, shortDate, zenToday, nowMs, durationStr } from '../format';
+import { getStudyTime } from '../studyTime';
 import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
@@ -288,6 +289,40 @@ async function renderRecentTab(
       ),
     ])
   );
+  // --- 学習時間（この端末の実測・非同期） ---
+  const stWrap = h('div', {}, []);
+  pane.appendChild(stWrap);
+  void (async () => {
+    const st = await getStudyTime();
+    const stKeys = Object.keys(st).sort();
+    const fmtMin = (m: number): string => durationStr(m * 60);
+    if (!stKeys.length) {
+      stWrap.appendChild(
+        section('学習時間', 'この端末で拡張が実測します（可視タブで操作中・動画再生中のみ加算）', [
+          h('div', { class: 'zss-empty' }, ['ZEN Study を開いて学習すると、この端末での学習時間が貯まります。']),
+        ])
+      );
+      return;
+    }
+    const stFirst = stKeys[0];
+    const stDays = data.daily_amount.map((d) => ({
+      date: d.date,
+      amount: d.date < stFirst ? null : Math.round((st[d.date] ?? 0) / 60),
+    }));
+    const stVals = stDays.map((d) => d.amount).filter((v): v is number => v !== null);
+    const stAvg = stVals.length ? Math.round(stVals.reduce((a, b) => a + b, 0) / stVals.length) : 0;
+    const todaySec = st[isoDate(zenToday())] ?? 0;
+    stWrap.appendChild(
+      section(`学習時間 · 今日 ${durationStr(todaySec)}`, 'この端末で拡張が実測（可視タブで操作中・動画再生中のみ加算・計測開始前は破線）', [
+        wrapChart(renderDailyBars(stDays, stAvg, tip, fmtMin)),
+        dataTable(
+          'データを表で見る',
+          ['日付', '曜日', '学習時間'],
+          stDays.map((d) => [shortDate(d.date), weekdayLabel(d.date), d.amount === null ? '記録なし' : fmtMin(d.amount)])
+        ),
+      ])
+    );
+  })();
   // --- 長期（自前蓄積・非同期） ＋ 曜日リズム（直近2週） ---
   const longWrap = h('div', {}, [h('div', { class: 'zss-empty' }, ['読み込み中…'])]);
   pane.appendChild(longWrap);
@@ -574,7 +609,11 @@ async function renderPredictTab(
 
     // 週間目標: 週始点(日曜5:00境界)からの教材差分。始点未記録ならカード表示時に補完。
     // 週の途中で始点が設置された場合は、日次スナップから週初時点の passed を復元して修復。
-    await ensureWeekStart(passed, await weekBaselinePassed());
+    // LAベースの今週ぶん推定も渡す（拡張外の消化の週帰属を修正。history.resolveWeekBase 参照）。
+    const weekIsoWG = zenWeekStartISO();
+    const laAllWG = merged.reduce((a, p) => a + p.amount, 0);
+    const laWeekWG = merged.filter((p) => p.date >= weekIsoWG).reduce((a, p) => a + p.amount, 0);
+    await ensureWeekStart(passed, await weekBaselinePassed(), laWeekWG * (laAllWG > 0 ? Math.min(1, passed / laAllWG) : 1));
     const ws = await getWeekStart();
     const weekDone = ws && ws.week === zenWeekStartISO() ? Math.max(0, passed - ws.passed) : 0;
     const weekGoal = await getWeekGoal();

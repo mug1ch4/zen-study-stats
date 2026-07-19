@@ -12,6 +12,7 @@ import { ensureTestTimer, notifyTimerSubmission, installTimerFlushHooks } from '
 import { notifyRolloverSoon, notifyProgress, notifyWeekReview } from './notify';
 import { zenWeekStartISO, parseDate, weekdayLabel } from './format';
 import { showToast } from './ui/toast';
+import { startStudyTimeTracking, startFrameActivityBeacon } from './studyTime';
 
 // 【DEV】完了検知の動作確認用トースト。切り分け（observer発火/確定判定）を可視化する。
 // ※リリース前に false に戻す（通常ユーザーには不要）。
@@ -325,11 +326,17 @@ function startup(): void {
       }
       await ensureDayStart(mt.passed); // 新しい学習日の始点passedを記録（デイリー目標の当日完了数算出用）
       // 週の始点（日曜5:00境界・スナップから週初時点を復元して途中設置を修復）。
+      // LAベースの「今週ぶん推定」も渡す: 拡張が見ていない環境（他端末等）での消化が
+      // 週境界のどちら側かを、サーバ側でzen-day境界が正確なLAで帰属する（92 vs 68問題の修正）。
       // 週が切り替わったら「先週のまとめ」を1回だけ通知（Fresh Start）
-      const ws = await ensureWeekStart(mt.passed, await weekBaselinePassed());
+      const series = await getSeries();
+      const weekIso = zenWeekStartISO();
+      const laAll = series.reduce((a, p) => a + p.amount, 0);
+      const laWeek = series.filter((p) => p.date >= weekIso).reduce((a, p) => a + p.amount, 0);
+      const shareApprox = laAll > 0 ? Math.min(1, mt.passed / laAll) : 1;
+      const ws = await ensureWeekStart(mt.passed, await weekBaselinePassed(), laWeek * shareApprox);
       if (ws.rolled && ws.prev) {
         const weekMat = Math.max(0, mt.passed - ws.prev.passed);
-        const series = await getSeries();
         const weekStart = zenWeekStartISO();
         const weekStartT = parseDate(weekStart).getTime();
         const lastWeek = series.filter((p) => {
@@ -359,6 +366,7 @@ function startup(): void {
   installTimerFlushHooks(); // タイマー蓄積のページ離脱時保存
   void ensureTestTimer(); // 直接テストページを開いた場合の計測開始
   window.addEventListener('zss:locationchange', onRouteChange);
+  startStudyTimeTracking(); // 学習時間の実測（可視＋活動/動画再生中のみ加算・通信ゼロ）
   sync();
   void ensureCourseSummary();
   maybeRecordVisit(); // 起動時にも1回サンプリング
@@ -368,9 +376,10 @@ function main(): void {
   // document_start 同期: 保存済みダークなら初回ペイント前に基礎ダークを適用（ページ読込の白フラッシュ防止）
   preInitDarkMode();
   if (window.top !== window.self) {
-    // サブフレーム（教材の iframe = www.nnn.ed.nico/contents/… 等）: ダークモードだけ適用。
+    // サブフレーム（教材の iframe = www.nnn.ed.nico/contents/… 等）: ダークモード＋活動ビーコンのみ。
     // カード/サイドパネル/残りサマリ/完了検知の購読は top フレームのみで行う。
     void initDarkModeFrame();
+    startFrameActivityBeacon(); // 動画再生・操作を top へ通知（学習時間の実測用）
     return;
   }
   // document_start: まず観測を開始し、本家カードが描かれた瞬間に隠す（初期フラッシュ防止）
