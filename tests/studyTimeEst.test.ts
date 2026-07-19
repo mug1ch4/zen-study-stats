@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { avgWorkMinutes, estimateDailyStudySeconds, estimateHourlyStudySeconds } from '../src/studyTimeEst';
+import { avgWorkMinutes, estimateDailyStudySeconds, estimateHourlyStudySeconds, calibrateSecPerLA } from '../src/studyTimeEst';
 import type { ResultEntry } from '../src/resultLog';
 import type { MovieEvent } from '../src/movieInterp';
 import type { WorkTimes } from '../src/history';
@@ -39,6 +39,34 @@ describe('estimateDailyStudySeconds', () => {
   it('5:00前の受験は前日（zen-day）に帰属', () => {
     const est = estimateDailyStudySeconds([entry({ firstAt: at(3), latestAt: at(3) })], [], wt);
     expect(Object.keys(est)).toEqual(['2026-07-14']);
+  });
+});
+
+describe('calibrateSecPerLA', () => {
+  it('推定とLAが両方ある日から Σ推定秒/ΣLA を算出（クランプ付き）', () => {
+    const est = { '2026-07-10': 3000, '2026-07-11': 6000, '2026-07-12': 3000 };
+    const la = [
+      { date: '2026-07-10', amount: 10 },
+      { date: '2026-07-11', amount: 20 },
+      { date: '2026-07-12', amount: 10 },
+      { date: '2026-07-13', amount: 50 }, // 推定なし → 較正から除外
+    ];
+    expect(calibrateSecPerLA(est, la)).toBeCloseTo(300, 5); // 12000/40
+  });
+  it('データ不足（3日未満 or ΣLA<30）なら null', () => {
+    expect(calibrateSecPerLA({ '2026-07-10': 3000 }, [{ date: '2026-07-10', amount: 40 }])).toBeNull();
+    expect(
+      calibrateSecPerLA({ '2026-07-10': 600, '2026-07-11': 600, '2026-07-12': 600 }, [
+        { date: '2026-07-10', amount: 5 },
+        { date: '2026-07-11', amount: 5 },
+        { date: '2026-07-12', amount: 5 },
+      ])
+    ).toBeNull();
+  });
+  it('クランプ: 60〜600 秒/学習', () => {
+    const la3 = (amount: number) => ['2026-07-10', '2026-07-11', '2026-07-12'].map((date) => ({ date, amount }));
+    expect(calibrateSecPerLA({ '2026-07-10': 10, '2026-07-11': 10, '2026-07-12': 10 }, la3(20))).toBe(60);
+    expect(calibrateSecPerLA({ '2026-07-10': 99999, '2026-07-11': 99999, '2026-07-12': 99999 }, la3(20))).toBe(600);
   });
 });
 

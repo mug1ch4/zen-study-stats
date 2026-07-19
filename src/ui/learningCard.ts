@@ -2,7 +2,7 @@ import type { LearningAmounts } from '../api';
 import { computeKpis, computeWeekdayStats } from '../derive';
 import { weekdayLabel, shortDate, zenToday, nowMs, durationStr } from '../format';
 import { getStudyTime, getStudyTimeHours } from '../studyTime';
-import { estimateDailyStudySeconds, estimateHourlyStudySeconds } from '../studyTimeEst';
+import { estimateDailyStudySeconds, estimateHourlyStudySeconds, calibrateSecPerLA } from '../studyTimeEst';
 import type { WorkTimes } from '../history';
 import { h } from '../dom';
 import { Tooltip } from './tooltip';
@@ -297,22 +297,34 @@ async function renderRecentTab(
   // 【二重計上防止】実測はテスト/動画の時間を既に含むため加算せず、日ごとに max(実測, 推定)。
   const fmtMin = (m: number): string => durationStr(m * 60);
   const timeDataPromise = (async () => {
-    const [st, rlogT, skelsT, wtT, hoursMeasured] = await Promise.all([
+    const [st, rlogT, skelsT, wtT, hoursMeasured, seriesLa] = await Promise.all([
       getStudyTime().catch(() => ({}) as Record<string, number>),
       getResultLog().catch(() => [] as ResultEntry[]),
       getChapterSkels().catch(() => ({})),
       getWorkTimes().catch(() => ({}) as WorkTimes),
       getStudyTimeHours().catch(() => new Array(24).fill(0) as number[]),
+      getSeriesOnce().catch(() => [] as { date: string; amount: number }[]),
     ]);
     const movT = interpolateMovieEvents(skelsT, rlogT);
     const estDaily = estimateDailyStudySeconds(rlogT, movT, wtT);
+    // 第3層: 学習数(LA)×較正済み秒/学習。受験記録の推定は詳細ログの抽出時点で止まる
+    // （今日・抽出後の日が抜ける）ため、当日も更新されるLAで埋める（実測開始前の全LA日も対象）。
+    const laMap = new Map<string, number>();
+    for (const p of seriesLa) laMap.set(p.date, p.amount);
+    for (const d of data.daily_amount) if (d.amount != null) laMap.set(d.date, d.amount);
+    const secPerLA = calibrateSecPerLA(
+      estDaily,
+      [...laMap.entries()].map(([date, amount]) => ({ date, amount }))
+    );
     const combined: Record<string, number> = {};
     const estSet = new Set<string>();
-    for (const d of new Set([...Object.keys(st), ...Object.keys(estDaily)])) {
+    const allDays = new Set([...Object.keys(st), ...Object.keys(estDaily), ...(secPerLA ? laMap.keys() : [])]);
+    for (const d of allDays) {
       const m = st[d] ?? 0;
       const e = estDaily[d] ?? 0;
-      combined[d] = Math.max(m, e);
-      if (e > m) estSet.add(d);
+      const f = secPerLA ? (laMap.get(d) ?? 0) * secPerLA : 0;
+      combined[d] = Math.max(m, e, f);
+      if (combined[d] > m) estSet.add(d);
     }
     return { combined, estSet, hoursMeasured, hoursEst: estimateHourlyStudySeconds(rlogT, movT, wtT) };
   })();
@@ -338,7 +350,7 @@ async function renderRecentTab(
     const stAvg = stVals.length ? Math.round(stVals.reduce((a, b) => a + b, 0) / stVals.length) : 0;
     const todaySec = combined[isoDate(zenToday())] ?? 0;
     stWrap.appendChild(
-      section(`学習時間 · 今日 ${durationStr(todaySec)}`, '実測（この端末・操作中/動画再生中のみ加算）。半透明の棒＝受験記録＋動画実尺からの推定（計測開始前・他端末ぶん）', [
+      section(`学習時間 · 今日 ${durationStr(todaySec)}`, '実測（この端末・操作中/動画再生中のみ加算）。半透明の棒＝推定（受験記録＋動画実尺、無い日は学習数×較正値。計測開始前・他端末・当日ぶんを補完）', [
         wrapChart(renderDailyBars(stDays, stAvg, tip, fmtMin, estSet)),
         dataTable(
           'データを表で見る',

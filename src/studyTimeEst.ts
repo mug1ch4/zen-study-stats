@@ -62,3 +62,26 @@ export function estimateHourlyStudySeconds(entries: ResultEntry[], movieEvents: 
   for (const a of attemptEvents(entries)) out[jstHour(a.at * 1000)] += avgWorkMinutes(wt, a.courseId, a.kind) * 60;
   return out;
 }
+
+// 第3層フォールバック: 学習数(LA)×「秒/学習」。受験記録ベースの推定は詳細ログの抽出時点で
+// 止まる（今日の分が入らない）ため、LA（サーバ集計・当日も更新される）から日の時間を近似する。
+// 「秒/学習」はユーザー自身のデータで較正: 受験記録推定が十分ある日の Σ推定秒/ΣLA。
+const SEC_PER_LA_MIN = 60; // 較正のクランプ（1〜10分/学習）: 異常データで暴れない
+const SEC_PER_LA_MAX = 600;
+
+/** 「秒/学習」の較正値。両方が十分ある日（LA>0 かつ 推定>0）が3日未満なら null（作らない）。 */
+export function calibrateSecPerLA(estDaily: Record<string, number>, la: { date: string; amount: number }[]): number | null {
+  let laSum = 0;
+  let estSum = 0;
+  let days = 0;
+  for (const p of la) {
+    const e = estDaily[p.date] ?? 0;
+    if (p.amount > 0 && e > 0) {
+      laSum += p.amount;
+      estSum += e;
+      days++;
+    }
+  }
+  if (days < 3 || laSum < 30) return null;
+  return Math.min(SEC_PER_LA_MAX, Math.max(SEC_PER_LA_MIN, estSum / laSum));
+}
