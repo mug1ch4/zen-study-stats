@@ -51,9 +51,14 @@ const courses = vol.map((c) => ({
 
 // resultLog はタイトルを持たない（ID＋数値のみ）→ そのまま。
 const resultLog = d['zss:resultLog'] ?? {};
+// chapterSkels もタイトルを持たない（ID・種別・動画秒数・passed のみ）→ そのまま。
+// これが無いと動画補間アンカーが0件になり、日次サンプルが「テスト数のみ」で実ペースを大幅過小評価する。
+const chapterSkels = d['zss:chapterSkels'] ?? {};
 
 const out = {
   _note: '匿名化デモデータ。教科名は一般名・章は第N回に置換（著作物の講義名を除去）。点数/日時/IDは実値。',
+  // デモの「現在」をここに固定する（静的データが実時間の経過で活動ゼロ日を積んで劣化しないように）
+  now: backup.exportedAt ?? null,
   courses,
   courseVol: vol,
   materialHist: d['zss:materialHist'] ?? {},
@@ -62,6 +67,7 @@ const out = {
   coursePassedHist: d['zss:coursePassedHist'] ?? {},
   electivePassedHist: d['zss:electivePassedHist'] ?? {},
   resultLog,
+  chapterSkels,
   history: d['zss:history'] ?? {},
   hourStats: d['zss:hourStats'] ?? {},
   reportHist: d['zss:reportHist'] ?? {},

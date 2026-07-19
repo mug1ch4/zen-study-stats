@@ -92,6 +92,11 @@ let mockResultLog: ResultEntry[] | null = null;
 export function __setMockResultLog(entries: ResultEntry[]): void {
   mockResultLog = entries;
 }
+let mockSkels: ChapterSkels | null = null;
+/** プレビュー/デモ用に章スケルトンを注入（動画補間アンカーをデモでも有効にする）。 */
+export function __setMockChapterSkels(skels: ChapterSkels): void {
+  mockSkels = skels;
+}
 async function loadMap(): Promise<LogMap> {
   if (mockResultLog) return Object.fromEntries(mockResultLog.map((e) => [String(e.sectionId), e]));
   if (!hasStorage()) return {};
@@ -116,6 +121,7 @@ export async function getResultLog(): Promise<ResultEntry[]> {
 }
 /** 章スケルトン（教材の並び・動画秒数）。動画視聴時刻の補間に使う。 */
 export async function getChapterSkels(): Promise<ChapterSkels> {
+  if (mockSkels) return mockSkels;
   if (!hasStorage()) return {};
   try {
     const r = await chrome.storage.local.get([KEY_SKEL]);

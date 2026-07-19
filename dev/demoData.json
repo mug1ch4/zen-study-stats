@@ -1,11 +1,12 @@
 {
   "_note": "匿名化デモデータ。教科名は一般名・章は第N回に置換（著作物の講義名を除去）。点数/日時/IDは実値。",
+  "now": "2026-07-19T07:10:21.803Z",
   "courses": [
     {
       "id": 2537,
       "title": "英語",
       "total": 252,
-      "passed": 184
+      "passed": 189
     },
     {
       "id": 2543,
@@ -35,7 +36,7 @@
       "id": 2503,
       "title": "物理",
       "total": 215,
-      "passed": 13
+      "passed": 18
     },
     {
       "id": 2678,
@@ -716,7 +717,7 @@
   ],
   "materialHist": {
     "2026-07-18": 231,
-    "2026-07-19": 255
+    "2026-07-19": 265
   },
   "materialTotalHist": {
     "2026-07-18": 1220,
@@ -738,9 +739,9 @@
     "2026-07-19": {
       "2491": 15,
       "2497": 31,
-      "2503": 13,
+      "2503": 18,
       "2519": 0,
-      "2537": 184,
+      "2537": 189,
       "2543": 7,
       "2551": 2,
       "2663": 3,
@@ -2074,6 +2075,2120 @@
       "totalScore": 2
     }
   },
+  "chapterSkels": {
+    "31506": {
+      "courseId": 2537,
+      "order": 0,
+      "sections": [
+        {
+          "id": 47047,
+          "kind": "movie",
+          "len": 178,
+          "passed": true
+        },
+        {
+          "id": 42950,
+          "kind": "movie",
+          "len": 301,
+          "passed": true
+        },
+        {
+          "id": 45078,
+          "kind": "movie",
+          "len": 132,
+          "passed": true
+        },
+        {
+          "id": 45079,
+          "kind": "movie",
+          "len": 207,
+          "passed": true
+        },
+        {
+          "id": 45080,
+          "kind": "movie",
+          "len": 217,
+          "passed": true
+        },
+        {
+          "id": 6938,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45081,
+          "kind": "movie",
+          "len": 137,
+          "passed": true
+        },
+        {
+          "id": 45082,
+          "kind": "movie",
+          "len": 198,
+          "passed": true
+        },
+        {
+          "id": 6939,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3104,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45083,
+          "kind": "movie",
+          "len": 434,
+          "passed": true
+        },
+        {
+          "id": 45084,
+          "kind": "movie",
+          "len": 212,
+          "passed": true
+        },
+        {
+          "id": 6940,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45085,
+          "kind": "movie",
+          "len": 230,
+          "passed": true
+        },
+        {
+          "id": 45086,
+          "kind": "movie",
+          "len": 213,
+          "passed": true
+        },
+        {
+          "id": 6941,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3105,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 47048,
+          "kind": "movie",
+          "len": 234,
+          "passed": true
+        },
+        {
+          "id": 1655,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1663,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31507": {
+      "courseId": 2537,
+      "order": 1,
+      "sections": [
+        {
+          "id": 47049,
+          "kind": "movie",
+          "len": 196,
+          "passed": true
+        },
+        {
+          "id": 45096,
+          "kind": "movie",
+          "len": 150,
+          "passed": true
+        },
+        {
+          "id": 45097,
+          "kind": "movie",
+          "len": 134,
+          "passed": true
+        },
+        {
+          "id": 45098,
+          "kind": "movie",
+          "len": 218,
+          "passed": true
+        },
+        {
+          "id": 6942,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45099,
+          "kind": "movie",
+          "len": 149,
+          "passed": true
+        },
+        {
+          "id": 45100,
+          "kind": "movie",
+          "len": 280,
+          "passed": true
+        },
+        {
+          "id": 6943,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3106,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45101,
+          "kind": "movie",
+          "len": 484,
+          "passed": true
+        },
+        {
+          "id": 45102,
+          "kind": "movie",
+          "len": 298,
+          "passed": true
+        },
+        {
+          "id": 6944,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45103,
+          "kind": "movie",
+          "len": 245,
+          "passed": true
+        },
+        {
+          "id": 45104,
+          "kind": "movie",
+          "len": 230,
+          "passed": true
+        },
+        {
+          "id": 6945,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3107,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 47050,
+          "kind": "movie",
+          "len": 273,
+          "passed": true
+        },
+        {
+          "id": 1656,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1664,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31508": {
+      "courseId": 2537,
+      "order": 2,
+      "sections": [
+        {
+          "id": 47051,
+          "kind": "movie",
+          "len": 180,
+          "passed": true
+        },
+        {
+          "id": 45225,
+          "kind": "movie",
+          "len": 158,
+          "passed": true
+        },
+        {
+          "id": 45226,
+          "kind": "movie",
+          "len": 154,
+          "passed": true
+        },
+        {
+          "id": 45227,
+          "kind": "movie",
+          "len": 321,
+          "passed": true
+        },
+        {
+          "id": 6946,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45228,
+          "kind": "movie",
+          "len": 122,
+          "passed": true
+        },
+        {
+          "id": 45229,
+          "kind": "movie",
+          "len": 226,
+          "passed": true
+        },
+        {
+          "id": 6947,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3108,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45230,
+          "kind": "movie",
+          "len": 407,
+          "passed": true
+        },
+        {
+          "id": 45231,
+          "kind": "movie",
+          "len": 542,
+          "passed": true
+        },
+        {
+          "id": 6948,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45232,
+          "kind": "movie",
+          "len": 211,
+          "passed": true
+        },
+        {
+          "id": 45233,
+          "kind": "movie",
+          "len": 202,
+          "passed": true
+        },
+        {
+          "id": 6949,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3109,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 47052,
+          "kind": "movie",
+          "len": 236,
+          "passed": true
+        },
+        {
+          "id": 1657,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1665,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31509": {
+      "courseId": 2537,
+      "order": 3,
+      "sections": [
+        {
+          "id": 47053,
+          "kind": "movie",
+          "len": 188,
+          "passed": true
+        },
+        {
+          "id": 45283,
+          "kind": "movie",
+          "len": 168,
+          "passed": true
+        },
+        {
+          "id": 45284,
+          "kind": "movie",
+          "len": 143,
+          "passed": true
+        },
+        {
+          "id": 45285,
+          "kind": "movie",
+          "len": 236,
+          "passed": true
+        },
+        {
+          "id": 6950,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45286,
+          "kind": "movie",
+          "len": 171,
+          "passed": true
+        },
+        {
+          "id": 45287,
+          "kind": "movie",
+          "len": 321,
+          "passed": true
+        },
+        {
+          "id": 45288,
+          "kind": "movie",
+          "len": 166,
+          "passed": true
+        },
+        {
+          "id": 45289,
+          "kind": "movie",
+          "len": 263,
+          "passed": true
+        },
+        {
+          "id": 6951,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3110,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45290,
+          "kind": "movie",
+          "len": 386,
+          "passed": true
+        },
+        {
+          "id": 45291,
+          "kind": "movie",
+          "len": 277,
+          "passed": true
+        },
+        {
+          "id": 6952,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45470,
+          "kind": "movie",
+          "len": 358,
+          "passed": true
+        },
+        {
+          "id": 45471,
+          "kind": "movie",
+          "len": 201,
+          "passed": true
+        },
+        {
+          "id": 6953,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3111,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 47054,
+          "kind": "movie",
+          "len": 223,
+          "passed": true
+        },
+        {
+          "id": 1658,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1666,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31510": {
+      "courseId": 2537,
+      "order": 4,
+      "sections": [
+        {
+          "id": 47055,
+          "kind": "movie",
+          "len": 178,
+          "passed": true
+        },
+        {
+          "id": 45472,
+          "kind": "movie",
+          "len": 162,
+          "passed": true
+        },
+        {
+          "id": 45473,
+          "kind": "movie",
+          "len": 135,
+          "passed": true
+        },
+        {
+          "id": 45474,
+          "kind": "movie",
+          "len": 386,
+          "passed": true
+        },
+        {
+          "id": 6954,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45475,
+          "kind": "movie",
+          "len": 143,
+          "passed": true
+        },
+        {
+          "id": 45476,
+          "kind": "movie",
+          "len": 254,
+          "passed": true
+        },
+        {
+          "id": 45477,
+          "kind": "movie",
+          "len": 195,
+          "passed": true
+        },
+        {
+          "id": 45478,
+          "kind": "movie",
+          "len": 303,
+          "passed": true
+        },
+        {
+          "id": 6955,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3112,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45518,
+          "kind": "movie",
+          "len": 389,
+          "passed": true
+        },
+        {
+          "id": 45519,
+          "kind": "movie",
+          "len": 308,
+          "passed": true
+        },
+        {
+          "id": 6956,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45520,
+          "kind": "movie",
+          "len": 271,
+          "passed": true
+        },
+        {
+          "id": 45521,
+          "kind": "movie",
+          "len": 234,
+          "passed": true
+        },
+        {
+          "id": 6957,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3113,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 47056,
+          "kind": "movie",
+          "len": 229,
+          "passed": true
+        },
+        {
+          "id": 1659,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1667,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31511": {
+      "courseId": 2537,
+      "order": 5,
+      "sections": [
+        {
+          "id": 47057,
+          "kind": "movie",
+          "len": 204,
+          "passed": true
+        },
+        {
+          "id": 45522,
+          "kind": "movie",
+          "len": 167,
+          "passed": true
+        },
+        {
+          "id": 45523,
+          "kind": "movie",
+          "len": 394,
+          "passed": true
+        },
+        {
+          "id": 6958,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45524,
+          "kind": "movie",
+          "len": 134,
+          "passed": true
+        },
+        {
+          "id": 45525,
+          "kind": "movie",
+          "len": 377,
+          "passed": true
+        },
+        {
+          "id": 6959,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3114,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45526,
+          "kind": "movie",
+          "len": 115,
+          "passed": true
+        },
+        {
+          "id": 45527,
+          "kind": "movie",
+          "len": 326,
+          "passed": true
+        },
+        {
+          "id": 45708,
+          "kind": "movie",
+          "len": 178,
+          "passed": true
+        },
+        {
+          "id": 45709,
+          "kind": "movie",
+          "len": 320,
+          "passed": true
+        },
+        {
+          "id": 6960,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45710,
+          "kind": "movie",
+          "len": 156,
+          "passed": true
+        },
+        {
+          "id": 45711,
+          "kind": "movie",
+          "len": 371,
+          "passed": true
+        },
+        {
+          "id": 6961,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3115,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 47058,
+          "kind": "movie",
+          "len": 241,
+          "passed": true
+        },
+        {
+          "id": 1660,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1668,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31512": {
+      "courseId": 2537,
+      "order": 6,
+      "sections": [
+        {
+          "id": 47207,
+          "kind": "movie",
+          "len": 185,
+          "passed": true
+        },
+        {
+          "id": 45712,
+          "kind": "movie",
+          "len": 151,
+          "passed": true
+        },
+        {
+          "id": 45713,
+          "kind": "movie",
+          "len": 119,
+          "passed": true
+        },
+        {
+          "id": 45714,
+          "kind": "movie",
+          "len": 389,
+          "passed": true
+        },
+        {
+          "id": 7044,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45715,
+          "kind": "movie",
+          "len": 159,
+          "passed": true
+        },
+        {
+          "id": 45716,
+          "kind": "movie",
+          "len": 325,
+          "passed": true
+        },
+        {
+          "id": 45741,
+          "kind": "movie",
+          "len": 166,
+          "passed": true
+        },
+        {
+          "id": 45742,
+          "kind": "movie",
+          "len": 275,
+          "passed": true
+        },
+        {
+          "id": 7045,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3156,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45743,
+          "kind": "movie",
+          "len": 373,
+          "passed": true
+        },
+        {
+          "id": 45744,
+          "kind": "movie",
+          "len": 282,
+          "passed": true
+        },
+        {
+          "id": 7046,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45745,
+          "kind": "movie",
+          "len": 243,
+          "passed": true
+        },
+        {
+          "id": 45746,
+          "kind": "movie",
+          "len": 180,
+          "passed": true
+        },
+        {
+          "id": 7047,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3157,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 47254,
+          "kind": "movie",
+          "len": 220,
+          "passed": true
+        },
+        {
+          "id": 1661,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1669,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31513": {
+      "courseId": 2537,
+      "order": 7,
+      "sections": [
+        {
+          "id": 47255,
+          "kind": "movie",
+          "len": 202,
+          "passed": true
+        },
+        {
+          "id": 45747,
+          "kind": "movie",
+          "len": 181,
+          "passed": true
+        },
+        {
+          "id": 45748,
+          "kind": "movie",
+          "len": 150,
+          "passed": true
+        },
+        {
+          "id": 45749,
+          "kind": "movie",
+          "len": 343,
+          "passed": true
+        },
+        {
+          "id": 7048,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45808,
+          "kind": "movie",
+          "len": 198,
+          "passed": true
+        },
+        {
+          "id": 45809,
+          "kind": "movie",
+          "len": 237,
+          "passed": true
+        },
+        {
+          "id": 45810,
+          "kind": "movie",
+          "len": 192,
+          "passed": true
+        },
+        {
+          "id": 45811,
+          "kind": "movie",
+          "len": 279,
+          "passed": true
+        },
+        {
+          "id": 7049,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3158,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45812,
+          "kind": "movie",
+          "len": 414,
+          "passed": true
+        },
+        {
+          "id": 45813,
+          "kind": "movie",
+          "len": 358,
+          "passed": true
+        },
+        {
+          "id": 7050,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45814,
+          "kind": "movie",
+          "len": 176,
+          "passed": true
+        },
+        {
+          "id": 45815,
+          "kind": "movie",
+          "len": 282,
+          "passed": true
+        },
+        {
+          "id": 7051,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3159,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 47256,
+          "kind": "movie",
+          "len": 275,
+          "passed": true
+        },
+        {
+          "id": 1662,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1670,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31514": {
+      "courseId": 2537,
+      "order": 8,
+      "sections": [
+        {
+          "id": 47257,
+          "kind": "movie",
+          "len": 210,
+          "passed": true
+        },
+        {
+          "id": 45816,
+          "kind": "movie",
+          "len": 197,
+          "passed": true
+        },
+        {
+          "id": 45908,
+          "kind": "movie",
+          "len": 160,
+          "passed": true
+        },
+        {
+          "id": 45909,
+          "kind": "movie",
+          "len": 374,
+          "passed": true
+        },
+        {
+          "id": 45910,
+          "kind": "movie",
+          "len": 161,
+          "passed": true
+        },
+        {
+          "id": 45911,
+          "kind": "movie",
+          "len": 267,
+          "passed": true
+        },
+        {
+          "id": 7052,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45912,
+          "kind": "movie",
+          "len": 118,
+          "passed": true
+        },
+        {
+          "id": 45913,
+          "kind": "movie",
+          "len": 234,
+          "passed": true
+        },
+        {
+          "id": 45914,
+          "kind": "movie",
+          "len": 155,
+          "passed": true
+        },
+        {
+          "id": 45915,
+          "kind": "movie",
+          "len": 223,
+          "passed": true
+        },
+        {
+          "id": 7053,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3160,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 45916,
+          "kind": "movie",
+          "len": 383,
+          "passed": true
+        },
+        {
+          "id": 45917,
+          "kind": "movie",
+          "len": 384,
+          "passed": true
+        },
+        {
+          "id": 44518,
+          "kind": "movie",
+          "len": 471,
+          "passed": true
+        },
+        {
+          "id": 44520,
+          "kind": "movie",
+          "len": 498,
+          "passed": true
+        },
+        {
+          "id": 44521,
+          "kind": "movie",
+          "len": 459,
+          "passed": true
+        },
+        {
+          "id": 44523,
+          "kind": "movie",
+          "len": 495,
+          "passed": true
+        },
+        {
+          "id": 7054,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 46011,
+          "kind": "movie",
+          "len": 221,
+          "passed": true
+        },
+        {
+          "id": 46012,
+          "kind": "movie",
+          "len": 203,
+          "passed": true
+        },
+        {
+          "id": 7055,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3161,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 47258,
+          "kind": "movie",
+          "len": 270,
+          "passed": true
+        },
+        {
+          "id": 1663,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1671,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31536": {
+      "courseId": 2543,
+      "order": 0,
+      "sections": [
+        {
+          "id": 42944,
+          "kind": "movie",
+          "len": 408,
+          "passed": true
+        },
+        {
+          "id": 44392,
+          "kind": "movie",
+          "len": 684,
+          "passed": true
+        },
+        {
+          "id": 44393,
+          "kind": "movie",
+          "len": 963,
+          "passed": true
+        },
+        {
+          "id": 44394,
+          "kind": "movie",
+          "len": 766,
+          "passed": true
+        },
+        {
+          "id": 44395,
+          "kind": "movie",
+          "len": 598,
+          "passed": true
+        },
+        {
+          "id": 44485,
+          "kind": "movie",
+          "len": 506,
+          "passed": true
+        },
+        {
+          "id": 44486,
+          "kind": "movie",
+          "len": 629,
+          "passed": true
+        },
+        {
+          "id": 7068,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 44602,
+          "kind": "movie",
+          "len": 450,
+          "passed": false
+        },
+        {
+          "id": 44603,
+          "kind": "movie",
+          "len": 576,
+          "passed": false
+        },
+        {
+          "id": 44487,
+          "kind": "movie",
+          "len": 371,
+          "passed": false
+        },
+        {
+          "id": 44488,
+          "kind": "movie",
+          "len": 499,
+          "passed": false
+        },
+        {
+          "id": 44604,
+          "kind": "movie",
+          "len": 284,
+          "passed": false
+        },
+        {
+          "id": 44605,
+          "kind": "movie",
+          "len": 513,
+          "passed": false
+        },
+        {
+          "id": 7069,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 3168,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 1637,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 1645,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        }
+      ]
+    },
+    "31575": {
+      "courseId": 2491,
+      "order": 0,
+      "sections": [
+        {
+          "id": 43088,
+          "kind": "movie",
+          "len": 566,
+          "passed": true
+        },
+        {
+          "id": 44762,
+          "kind": "movie",
+          "len": 410,
+          "passed": true
+        },
+        {
+          "id": 44763,
+          "kind": "movie",
+          "len": 315,
+          "passed": true
+        },
+        {
+          "id": 44764,
+          "kind": "movie",
+          "len": 619,
+          "passed": true
+        },
+        {
+          "id": 7004,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 44765,
+          "kind": "movie",
+          "len": 551,
+          "passed": true
+        },
+        {
+          "id": 44766,
+          "kind": "movie",
+          "len": 246,
+          "passed": true
+        },
+        {
+          "id": 44767,
+          "kind": "movie",
+          "len": 522,
+          "passed": true
+        },
+        {
+          "id": 7005,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3137,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 44768,
+          "kind": "movie",
+          "len": 726,
+          "passed": true
+        },
+        {
+          "id": 44769,
+          "kind": "movie",
+          "len": 305,
+          "passed": true
+        },
+        {
+          "id": 44770,
+          "kind": "movie",
+          "len": 427,
+          "passed": true
+        },
+        {
+          "id": 46026,
+          "kind": "movie",
+          "len": 561,
+          "passed": true
+        },
+        {
+          "id": 46027,
+          "kind": "movie",
+          "len": 274,
+          "passed": true
+        },
+        {
+          "id": 7006,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1679,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1687,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "31602": {
+      "courseId": 2497,
+      "order": 0,
+      "sections": [
+        {
+          "id": 43088,
+          "kind": "movie",
+          "len": 566,
+          "passed": true
+        },
+        {
+          "id": 44416,
+          "kind": "movie",
+          "len": 97,
+          "passed": true
+        },
+        {
+          "id": 44417,
+          "kind": "movie",
+          "len": 181,
+          "passed": true
+        },
+        {
+          "id": 44418,
+          "kind": "movie",
+          "len": 225,
+          "passed": true
+        },
+        {
+          "id": 44419,
+          "kind": "movie",
+          "len": 176,
+          "passed": true
+        },
+        {
+          "id": 44420,
+          "kind": "movie",
+          "len": 473,
+          "passed": true
+        },
+        {
+          "id": 44421,
+          "kind": "movie",
+          "len": 155,
+          "passed": true
+        },
+        {
+          "id": 7107,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 44422,
+          "kind": "movie",
+          "len": 160,
+          "passed": true
+        },
+        {
+          "id": 44423,
+          "kind": "movie",
+          "len": 563,
+          "passed": true
+        },
+        {
+          "id": 44424,
+          "kind": "movie",
+          "len": 199,
+          "passed": true
+        },
+        {
+          "id": 44425,
+          "kind": "movie",
+          "len": 207,
+          "passed": true
+        },
+        {
+          "id": 44426,
+          "kind": "movie",
+          "len": 156,
+          "passed": true
+        },
+        {
+          "id": 44427,
+          "kind": "movie",
+          "len": 257,
+          "passed": true
+        },
+        {
+          "id": 44428,
+          "kind": "movie",
+          "len": 191,
+          "passed": true
+        },
+        {
+          "id": 7108,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3185,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 44429,
+          "kind": "movie",
+          "len": 245,
+          "passed": true
+        },
+        {
+          "id": 44430,
+          "kind": "movie",
+          "len": 372,
+          "passed": true
+        },
+        {
+          "id": 44431,
+          "kind": "movie",
+          "len": 318,
+          "passed": false
+        },
+        {
+          "id": 32360,
+          "kind": "movie",
+          "len": 329,
+          "passed": false
+        },
+        {
+          "id": 44432,
+          "kind": "movie",
+          "len": 129,
+          "passed": true
+        },
+        {
+          "id": 44433,
+          "kind": "movie",
+          "len": 185,
+          "passed": true
+        },
+        {
+          "id": 44434,
+          "kind": "movie",
+          "len": 197,
+          "passed": true
+        },
+        {
+          "id": 44435,
+          "kind": "movie",
+          "len": 133,
+          "passed": true
+        },
+        {
+          "id": 7109,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 44436,
+          "kind": "movie",
+          "len": 236,
+          "passed": true
+        },
+        {
+          "id": 44437,
+          "kind": "movie",
+          "len": 140,
+          "passed": true
+        },
+        {
+          "id": 44438,
+          "kind": "movie",
+          "len": 166,
+          "passed": true
+        },
+        {
+          "id": 44439,
+          "kind": "movie",
+          "len": 157,
+          "passed": true
+        },
+        {
+          "id": 46465,
+          "kind": "movie",
+          "len": 278,
+          "passed": true
+        },
+        {
+          "id": 46466,
+          "kind": "movie",
+          "len": 181,
+          "passed": true
+        },
+        {
+          "id": 46467,
+          "kind": "movie",
+          "len": 254,
+          "passed": true
+        },
+        {
+          "id": 46468,
+          "kind": "movie",
+          "len": 240,
+          "passed": true
+        },
+        {
+          "id": 46469,
+          "kind": "movie",
+          "len": 210,
+          "passed": true
+        },
+        {
+          "id": 46470,
+          "kind": "movie",
+          "len": 361,
+          "passed": true
+        },
+        {
+          "id": 46471,
+          "kind": "movie",
+          "len": 340,
+          "passed": true
+        },
+        {
+          "id": 7110,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3186,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 44440,
+          "kind": "movie",
+          "len": 325,
+          "passed": true
+        },
+        {
+          "id": 44441,
+          "kind": "movie",
+          "len": 254,
+          "passed": true
+        },
+        {
+          "id": 44442,
+          "kind": "movie",
+          "len": 424,
+          "passed": true
+        },
+        {
+          "id": 44443,
+          "kind": "movie",
+          "len": 134,
+          "passed": true
+        },
+        {
+          "id": 44444,
+          "kind": "movie",
+          "len": 246,
+          "passed": true
+        },
+        {
+          "id": 44445,
+          "kind": "movie",
+          "len": 246,
+          "passed": true
+        },
+        {
+          "id": 7111,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 44446,
+          "kind": "movie",
+          "len": 504,
+          "passed": true
+        },
+        {
+          "id": 44447,
+          "kind": "movie",
+          "len": 227,
+          "passed": true
+        },
+        {
+          "id": 44448,
+          "kind": "movie",
+          "len": 524,
+          "passed": true
+        },
+        {
+          "id": 44449,
+          "kind": "movie",
+          "len": 323,
+          "passed": true
+        },
+        {
+          "id": 47027,
+          "kind": "movie",
+          "len": 389,
+          "passed": true
+        },
+        {
+          "id": 47028,
+          "kind": "movie",
+          "len": 429,
+          "passed": true
+        },
+        {
+          "id": 47029,
+          "kind": "movie",
+          "len": 672,
+          "passed": true
+        },
+        {
+          "id": 7112,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 3187,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1643,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1651,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        }
+      ]
+    },
+    "31620": {
+      "courseId": 2503,
+      "order": 0,
+      "sections": [
+        {
+          "id": 43087,
+          "kind": "movie",
+          "len": 386,
+          "passed": true
+        },
+        {
+          "id": 42670,
+          "kind": "movie",
+          "len": 846,
+          "passed": true
+        },
+        {
+          "id": 41375,
+          "kind": "movie",
+          "len": 721,
+          "passed": true
+        },
+        {
+          "id": 41376,
+          "kind": "movie",
+          "len": 655,
+          "passed": true
+        },
+        {
+          "id": 41377,
+          "kind": "movie",
+          "len": 799,
+          "passed": true
+        },
+        {
+          "id": 41378,
+          "kind": "movie",
+          "len": 288,
+          "passed": true
+        },
+        {
+          "id": 6468,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 54123,
+          "kind": "movie",
+          "len": 626,
+          "passed": true
+        },
+        {
+          "id": 41380,
+          "kind": "movie",
+          "len": 696,
+          "passed": true
+        },
+        {
+          "id": 41381,
+          "kind": "movie",
+          "len": 368,
+          "passed": true
+        },
+        {
+          "id": 6469,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 2783,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 41382,
+          "kind": "movie",
+          "len": 215,
+          "passed": true
+        },
+        {
+          "id": 41383,
+          "kind": "movie",
+          "len": 718,
+          "passed": true
+        },
+        {
+          "id": 41384,
+          "kind": "movie",
+          "len": 773,
+          "passed": true
+        },
+        {
+          "id": 43462,
+          "kind": "movie",
+          "len": 963,
+          "passed": true
+        },
+        {
+          "id": 41385,
+          "kind": "movie",
+          "len": 683,
+          "passed": true
+        },
+        {
+          "id": 43382,
+          "kind": "movie",
+          "len": 550,
+          "passed": true
+        },
+        {
+          "id": 41563,
+          "kind": "movie",
+          "len": 444,
+          "passed": true
+        },
+        {
+          "id": 6470,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1511,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1517,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "32664": {
+      "courseId": 2663,
+      "order": 0,
+      "sections": [
+        {
+          "id": 53768,
+          "kind": "movie",
+          "len": 583,
+          "passed": true
+        },
+        {
+          "id": 1822,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        },
+        {
+          "id": 1825,
+          "kind": "anchor",
+          "len": 0,
+          "passed": true
+        }
+      ]
+    },
+    "32844": {
+      "courseId": 2551,
+      "order": 0,
+      "sections": [
+        {
+          "id": 47059,
+          "kind": "movie",
+          "len": 203,
+          "passed": true
+        },
+        {
+          "id": 45528,
+          "kind": "movie",
+          "len": 612,
+          "passed": true
+        },
+        {
+          "id": 45529,
+          "kind": "movie",
+          "len": 455,
+          "passed": false
+        },
+        {
+          "id": 45530,
+          "kind": "movie",
+          "len": 586,
+          "passed": false
+        },
+        {
+          "id": 45531,
+          "kind": "movie",
+          "len": 579,
+          "passed": false
+        },
+        {
+          "id": 45532,
+          "kind": "movie",
+          "len": 405,
+          "passed": false
+        },
+        {
+          "id": 7090,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 45533,
+          "kind": "movie",
+          "len": 395,
+          "passed": false
+        },
+        {
+          "id": 45534,
+          "kind": "movie",
+          "len": 238,
+          "passed": false
+        },
+        {
+          "id": 45535,
+          "kind": "movie",
+          "len": 355,
+          "passed": false
+        },
+        {
+          "id": 45536,
+          "kind": "movie",
+          "len": 528,
+          "passed": false
+        },
+        {
+          "id": 45537,
+          "kind": "movie",
+          "len": 317,
+          "passed": false
+        },
+        {
+          "id": 7091,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 3179,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 45538,
+          "kind": "movie",
+          "len": 791,
+          "passed": false
+        },
+        {
+          "id": 45539,
+          "kind": "movie",
+          "len": 380,
+          "passed": false
+        },
+        {
+          "id": 7092,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 45540,
+          "kind": "movie",
+          "len": 276,
+          "passed": false
+        },
+        {
+          "id": 45541,
+          "kind": "movie",
+          "len": 408,
+          "passed": false
+        },
+        {
+          "id": 45542,
+          "kind": "movie",
+          "len": 366,
+          "passed": false
+        },
+        {
+          "id": 7093,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 45543,
+          "kind": "movie",
+          "len": 484,
+          "passed": false
+        },
+        {
+          "id": 45544,
+          "kind": "movie",
+          "len": 348,
+          "passed": false
+        },
+        {
+          "id": 45545,
+          "kind": "movie",
+          "len": 278,
+          "passed": false
+        },
+        {
+          "id": 45546,
+          "kind": "movie",
+          "len": 300,
+          "passed": false
+        },
+        {
+          "id": 7094,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 3180,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 47060,
+          "kind": "movie",
+          "len": 282,
+          "passed": false
+        },
+        {
+          "id": 1688,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        },
+        {
+          "id": 1696,
+          "kind": "anchor",
+          "len": 0,
+          "passed": false
+        }
+      ]
+    }
+  },
   "history": {
     "2026-07-06": 18,
     "2026-07-07": 6,
@@ -2088,12 +4203,12 @@
     "2026-07-16": 28,
     "2026-07-17": 72,
     "2026-07-18": 40,
-    "2026-07-19": 7
+    "2026-07-19": 15
   },
   "hourStats": {
     "lastAmount": 49,
     "lastDay": "2026-07-17",
-    "lastTs": 1784442681855,
+    "lastTs": 1784444056975,
     "study": [
       2,
       0,
@@ -2110,7 +4225,7 @@
       1,
       1,
       14,
-      1,
+      3,
       0,
       2,
       4,
@@ -2136,7 +4251,7 @@
       2,
       2,
       6,
-      4,
+      5,
       1,
       2,
       3,

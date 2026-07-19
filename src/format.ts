@@ -20,8 +20,20 @@ export function isoLocal(d: Date): string {
 const JST_OFFSET_MS = 9 * 3600 * 1000;
 const ZEN_DAY_START_HOUR = 5;
 
+// デモ/プレビュー用の時計固定。静的なデモデータは「今日」が実時間で進むと
+// 最終記録日以降が全て活動ゼロ扱いになり予測が日ごとに劣化するため、
+// データ採取時刻に「現在」を固定できるようにする（拡張の実動作では常に null）。
+let mockNowMs: number | null = null;
+export function __setMockNow(ms: number | null): void {
+  mockNowMs = ms;
+}
+/** 「現在」の epoch ms。デモでは固定時刻、実動作では Date.now()。 */
+export function nowMs(): number {
+  return mockNowMs ?? Date.now();
+}
+
 /** ZEN Study の「学習上の今日」= JST時刻から5時間戻した日付 "YYYY-MM-DD"。 */
-export function zenTodayISO(nowMs: number = Date.now()): string {
+export function zenTodayISO(nowMs: number = mockNowMs ?? Date.now()): string {
   // epoch を JST壁時計へ寄せ、さらに5時間戻してから UTC 読みで日付成分を取る。
   const shifted = new Date(nowMs + JST_OFFSET_MS - ZEN_DAY_START_HOUR * 3600 * 1000);
   const p = (n: number) => String(n).padStart(2, '0');
@@ -29,12 +41,12 @@ export function zenTodayISO(nowMs: number = Date.now()): string {
 }
 
 /** ZEN Study の「学習上の今日」をローカル正午の Date で。予測・チャート基点用。 */
-export function zenToday(nowMs: number = Date.now()): Date {
+export function zenToday(nowMs: number = mockNowMs ?? Date.now()): Date {
   return parseDate(zenTodayISO(nowMs));
 }
 
 /** 「学習上の今週」の開始日=日曜 "YYYY-MM-DD"（週目標・週次レビューの週キー。本家の週表示に合わせ日曜はじまり・5:00境界）。 */
-export function zenWeekStartISO(nowMs: number = Date.now()): string {
+export function zenWeekStartISO(nowMs: number = mockNowMs ?? Date.now()): string {
   const d = parseDate(zenTodayISO(nowMs));
   d.setDate(d.getDate() - d.getDay()); // Sun=0
   return isoLocal(d);

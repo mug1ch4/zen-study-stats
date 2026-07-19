@@ -2,7 +2,7 @@
 // 曜日 / 月ごと / 祝日 / 一貫性 / 時間帯 / 必修アドバイス。
 // すべて自前蓄積＋GET取得済みデータのみを使用（read-only・第一原則）。
 import { isHoliday } from './holidays';
-import { parseDate } from './format';
+import { parseDate, nowMs } from './format';
 import { reportDeadlineStatus, deadlineAdherence, type DeadlineOutcomes } from './deadlines';
 import { computeCoursePaces, courseEtaDays } from './coursePace';
 import type { CoursePassedHistory } from './history';
@@ -324,7 +324,7 @@ export function coursePaceTendency(history: CoursePassedHistory, courses: Course
 /** レポート締切の状況: 締切遵守率（観測下でまたいだ締切のみ）＋締切超過＋次の締切。月次締切ベースの分析。 */
 export function deadlineTendency(report: ReportProgress, outcomes: DeadlineOutcomes): Section {
   const months = report.months.map((m) => ({ year: m.year, month: m.month, deadline: m.deadline, total: m.total, passed: m.passed }));
-  const st = reportDeadlineStatus(months, Date.now());
+  const st = reportDeadlineStatus(months, nowMs());
   const adh = deadlineAdherence(outcomes);
   const insights: Insight[] = [];
 
@@ -367,7 +367,7 @@ export function requiredAdvice(
   const insights: Insight[] = [];
   const remReports = Math.max(0, report.totalReports - report.passedReports);
   const deadline = report.finalDeadline ? parseDate(report.finalDeadline.slice(0, 10)) : null;
-  const daysLeft = deadline ? Math.max(0, Math.round((deadline.getTime() - Date.now()) / 86400000)) : null;
+  const daysLeft = deadline ? Math.max(0, Math.round((deadline.getTime() - nowMs()) / 86400000)) : null;
   if (deadline && daysLeft !== null) {
     insights.push({
       kind: daysLeft < 21 && remReports > 3 ? 'warn' : 'note',

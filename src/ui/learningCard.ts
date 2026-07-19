@@ -1,6 +1,6 @@
 import type { LearningAmounts } from '../api';
 import { computeKpis, computeWeekdayStats } from '../derive';
-import { weekdayLabel, shortDate, zenToday } from '../format';
+import { weekdayLabel, shortDate, zenToday, nowMs } from '../format';
 import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
@@ -590,7 +590,7 @@ async function renderPredictTab(
     // 月次レポート締切（年度末一発でなく、毎月の締切に追いつくのが成績上の実態）
     const dstatus = reportDeadlineStatus(
       report.months.map((m) => ({ year: m.year, month: m.month, deadline: m.deadline, total: m.total, passed: m.passed })),
-      Date.now()
+      nowMs()
     );
     // 教科別ペース × 締切の章内訳 → 「このペースだと間に合わない教科」判定（GET 1回・失敗時は表示しないだけ）
     const coursePassedHist = subjCoursePassedHist; // 上で取得済みを再利用
@@ -598,7 +598,7 @@ async function renderPredictTab(
     if (dstatus.next) {
       try {
         const detail = await fetchMonthlyReport(dstatus.next.year, dstatus.next.month);
-        const now = Date.now();
+        const now = nowMs();
         const groups = detail.deadline_groups.map((g) => ({
           daysLeft: Math.ceil((new Date(g.deadline).getTime() - now) / 86400000),
           chapters: g.chapters,
@@ -1369,7 +1369,7 @@ function renderPredictorSection(
     let perDay = pace && pace.samples >= 2 ? pace.perDay : null;
     let paceFromAnchor = false;
     if (perDay === null) {
-      const ap = courseEventPace(evs, Date.now());
+      const ap = courseEventPace(evs, nowMs());
       if (ap !== null) {
         perDay = ap;
         paceFromAnchor = true;

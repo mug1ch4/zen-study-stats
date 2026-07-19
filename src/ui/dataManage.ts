@@ -23,10 +23,11 @@ const SKIP_KEYS = new Set([
   'zss:dayStart',
   'zss:notify',
   'zss:timerAcc', // 未提出タイマーの一時蓄積（端末ごとの進行中状態。確定分は workTime に入る）
-  'zss:chapterSkels', // 章の教材並びキャッシュ（詳細ログ抽出の実行で再構築可能）
 ]);
-// 日付→数値の履歴系（インポート時に統合する）
-const HIST_KEYS = new Set(['zss:history', 'zss:reportHist', 'zss:materialHist', 'zss:materialTotalHist', 'zss:coursePassedHist', 'zss:electivePassedHist', 'zss:deadlineOutcomes', 'zss:resultLog']);
+// キー→エントリの統合系（インポート時に既存とマージする）。
+// chapterSkels は再構築可能なキャッシュだが、動画視聴時刻の補間（＝過去実績の復元精度）に必要なため
+// バックアップに含める（無いと移行先で詳細ログ抽出をやり直すまで動画アンカーが消える）。
+const HIST_KEYS = new Set(['zss:history', 'zss:reportHist', 'zss:materialHist', 'zss:materialTotalHist', 'zss:coursePassedHist', 'zss:electivePassedHist', 'zss:deadlineOutcomes', 'zss:resultLog', 'zss:chapterSkels']);
 // 時間帯の学習記録（24時間バケットの加算カウンタ）。復元先が空＝そのまま、既存あり＝合算で統合。
 const HOUR_KEY = 'zss:hourStats';
 
@@ -102,7 +103,7 @@ async function importBackup(backup: Backup): Promise<number> {
     if (!k.startsWith(PREFIX) || SKIP_KEYS.has(k)) continue;
     if (HIST_KEYS.has(k) && v && typeof v === 'object') {
       const merged = { ...((cur[k] as Record<string, number>) ?? {}), ...(v as Record<string, number>) };
-      mergedDates += Object.keys(v as object).length;
+      if (k !== 'zss:chapterSkels') mergedDates += Object.keys(v as object).length; // skels は「日数」でないため件数表示に含めない
       patch[k] = merged;
     } else if (k === HOUR_KEY && v && typeof v === 'object') {
       patch[k] = mergeHourStats(cur[k], v);
@@ -191,7 +192,7 @@ export function renderDataManage(): HTMLElement {
       '長期の学習履歴（カレンダー・トレンド・予測の土台）はこの端末だけに保存され、アンインストールで消えます。定期的な書き出しを推奨します。復元は既存データと統合します（削除はしません）。',
     ]),
     h('p', { class: 'zss-dm-note' }, [
-      'JSONに含むもの: 学習数・完了レポート・教材消化の履歴、時間帯の学習記録、目標完了日、テーマ設定。',
+      'JSONに含むもの: 学習数・完了レポート・教材消化の履歴、受験記録（詳細ログ）と章の教材並び、時間帯の学習記録、目標完了日、テーマ設定。',
       '（コース集計キャッシュや、当日限り／端末ごとの内部状態＝スナップ済みフラグ・完了検知の基準値・通知の既送記録は、復元時の不整合を避けるため除外）。CSVは日付×学習数・完了レポート・教材消化の一覧。',
     ]),
     h('div', { class: 'zss-dm-row' }, [jsonBtn, csvBtn, importBtn, reloadBtn]),

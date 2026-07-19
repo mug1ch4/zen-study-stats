@@ -6,7 +6,9 @@ import { __setMockHistory, __setMockMaterialHist, __setMockHour, type History } 
 import { __setMockVolumes } from '../src/courseStats';
 import { __setMockCourseMaterials } from '../src/courseApi';
 import { __setMockReport, __setMockLearning } from '../src/api';
-import { __setMockResultLog, type ResultEntry } from '../src/resultLog';
+import { __setMockResultLog, __setMockChapterSkels, type ResultEntry } from '../src/resultLog';
+import { __setMockNow } from '../src/format';
+import type { ChapterSkels } from '../src/movieInterp';
 import demo from './demoData.json';
 
 const met = (ms: number, mc: number, t: number, r: number) => ({
@@ -27,14 +29,21 @@ function learningFromHistory(hist: History): LearningAmounts {
 
 /** 全モックを注入し、直近14日の学習数サンプルを返す。 */
 export function installMocks(): LearningAmounts {
+  // デモの「現在」をデータ採取時刻に固定（静的データの今日が実時間で進み
+  // 「最終記録日以降ずっと活動ゼロ」でペース・予測が日ごとに劣化するのを防ぐ）。
+  const now = (demo as { now?: string | null }).now;
+  if (now) __setMockNow(Date.parse(now));
   // 教科別 教材（実データ：合計1220・現在完了255・匿名化タイトル）
   __setMockCourseMaterials(demo.courses.map((c) => ({ id: c.id, title: c.title, total: c.total, passed: c.passed })));
 
   // 教材消化(passed_materials)の日次履歴（実データ・薄い＝2日）。総数は materialTotal。
   __setMockMaterialHist(demo.materialHist as History, demo.materialTotal);
 
-  // 受験アンカー（実データ・96件）。buildRequiredSeries がこれで過去を復元する。
+  // 受験アンカー（実データ）。buildRequiredSeries がこれで過去を復元する。
   __setMockResultLog(Object.values(demo.resultLog) as ResultEntry[]);
+  // 章スケルトン（実データ・ID/種別/秒数のみ）。無いと動画補間アンカーが0件になり
+  // 日次サンプルが「テスト受験数のみ」で実際の消化ペースを大幅過小評価する。
+  __setMockChapterSkels(((demo as { chapterSkels?: ChapterSkels }).chapterSkels ?? {}) as ChapterSkels);
 
   // レポート完了予測（締切構造は実運用に近い合成。教材総数は実データ1220に合わせる）。
   __setMockReport({
