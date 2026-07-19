@@ -6,8 +6,9 @@ const PLOT_W = W - L - R;
 const PLOT_H = H - T - B;
 const BASE_Y = T + PLOT_H;
 
-/** 時間帯トレンド（0〜23時の学習量）。自前計測した study[24] を可視化。 */
-export function renderHourBars(study: number[], tip: Tooltip): SVGElement {
+/** 時間帯トレンド（0〜23時の学習量）。自前計測した study[24] を可視化。
+ *  fmt 指定時はツールチップの値表記を差し替え（例: 分→1h23m。既定は「N 教材」）。 */
+export function renderHourBars(study: number[], tip: Tooltip, fmt?: (v: number) => string): SVGElement {
   const max = Math.max(1, ...study);
   const yMax = max * 1.15;
   const scale = (v: number) => (PLOT_H * v) / yMax;
@@ -38,7 +39,7 @@ export function renderHourBars(study: number[], tip: Tooltip): SVGElement {
       x: L + hStart * slotW, y: T, width: slotW, height: PLOT_H + B, fill: 'transparent',
       onmousemove: (e: Event) => {
         const me = e as MouseEvent;
-        tip.show(me.clientX, me.clientY, `<b>${hStart}〜${(hStart + 1) % 24}時</b> ${Math.round(v)} 教材`);
+        tip.show(me.clientX, me.clientY, `<b>${hStart}〜${(hStart + 1) % 24}時</b> ${fmt ? fmt(Math.round(v)) : `${Math.round(v)} 教材`}`);
       },
       onmouseleave: () => tip.hide(),
     });

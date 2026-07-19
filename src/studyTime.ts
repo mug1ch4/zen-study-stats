@@ -5,14 +5,20 @@
 import { zenTodayISO } from './format';
 
 const KEY = 'zss:studyTime'; // { "YYYY-MM-DD": seconds }
+const KEY_HOUR = 'zss:studyTimeHour'; // number[24] 累計秒（JST時刻バケット・スクリーンタイム風の時間帯分布用）
 const MAX_DAYS = 400;
 
 export type StudyTime = Record<string, number>;
 
+const zeros24 = (): number[] => new Array(24).fill(0) as number[];
+const jstHour = (nowMs: number): number => new Date(nowMs + 9 * 3600 * 1000).getUTCHours();
+
 let memMock: StudyTime | null = null;
+let memMockHours: number[] | null = null;
 /** プレビュー/デモ用に注入。 */
-export function __setMockStudyTime(m: StudyTime): void {
+export function __setMockStudyTime(m: StudyTime, hours?: number[]): void {
   memMock = m;
+  if (hours) memMockHours = hours;
 }
 
 function hasStorage(): boolean {
@@ -30,7 +36,20 @@ export async function getStudyTime(): Promise<StudyTime> {
   }
 }
 
-/** 今日（zen-day）へ秒数を加算。古い日付は間引く。 */
+/** 時間帯別の累計秒（JSTの24バケット・スクリーンタイム風の分布用）。 */
+export async function getStudyTimeHours(): Promise<number[]> {
+  if (memMockHours) return memMockHours;
+  if (!hasStorage()) return zeros24();
+  try {
+    const r = await chrome.storage.local.get([KEY_HOUR]);
+    const v = r?.[KEY_HOUR] as number[] | undefined;
+    return Array.isArray(v) && v.length === 24 ? v : zeros24();
+  } catch {
+    return zeros24();
+  }
+}
+
+/** 今日（zen-day）＋現在の時間帯バケットへ秒数を加算。古い日付は間引く。 */
 export async function addStudyTime(sec: number): Promise<void> {
   if (memMock || !hasStorage() || sec <= 0) return;
   try {
@@ -39,7 +58,9 @@ export async function addStudyTime(sec: number): Promise<void> {
     cur[today] = (cur[today] ?? 0) + sec;
     const dates = Object.keys(cur).sort();
     for (let i = 0; i < dates.length - MAX_DAYS; i++) delete cur[dates[i]];
-    await chrome.storage.local.set({ [KEY]: cur });
+    const hours = await getStudyTimeHours();
+    hours[jstHour(Date.now())] += sec;
+    await chrome.storage.local.set({ [KEY]: cur, [KEY_HOUR]: hours });
   } catch {
     /* 補助データ。失敗は無視 */
   }

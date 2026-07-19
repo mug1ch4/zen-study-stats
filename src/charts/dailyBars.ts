@@ -9,8 +9,9 @@ const PLOT_H = H - T - B;
 const BASE_Y = T + PLOT_H;
 
 /** 直近14日の日別バー + 2週平均の基準線。dataviz mark spec 準拠（細バー・データ端角丸・ベースライン固定）。
- *  fmt 指定時は値の表示（棒上ラベル・ツールチップ・基準線）を差し替える（例: 分→"1h23m"）。 */
-export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip, fmt?: (v: number) => string): SVGElement {
+ *  fmt 指定時は値の表示（棒上ラベル・ツールチップ・基準線）を差し替える（例: 分→"1h23m"）。
+ *  estSet の日付は推定値として描く（半透明バー＋ツールチップに「推定」）。 */
+export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip, fmt?: (v: number) => string, estSet?: Set<string>): SVGElement {
   const n = days.length || 1;
   const slotW = PLOT_W / n;
   const barW = Math.min(26, slotW * 0.52);
@@ -53,9 +54,10 @@ export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip, 
       }));
     } else {
       const bh = Math.max(scale(d.amount), 2);
+      const isEst = estSet?.has(d.date) ?? false;
       svg.appendChild(s('rect', {
         x: cx - barW / 2, y: BASE_Y - bh, width: barW, height: bh, rx: 3, fill: 'var(--primary)',
-        class: 'zss-abar', style: `animation-delay:${i * 24}ms`,
+        class: 'zss-abar', style: `animation-delay:${i * 24}ms${isEst ? ';opacity:.55' : ''}`,
       }));
       if (isToday) {
         svg.appendChild(s('rect', {
@@ -81,7 +83,8 @@ export function renderDailyBars(days: DailyAmount[], avg: number, tip: Tooltip, 
     }, [weekdayLabel(d.date)]));
 
     // ホバー/フォーカス用の透明ヒット領域（列全体）。キーボードでも到達可能に。
-    const valStr = d.amount === null ? '記録なし' : fmt ? fmt(d.amount) : `${d.amount}件`;
+    const estMark = d.amount !== null && (estSet?.has(d.date) ?? false) ? '（推定）' : '';
+    const valStr = d.amount === null ? '記録なし' : fmt ? `${fmt(d.amount)}${estMark}` : `${d.amount}件`;
     const body = d.amount === null ? '記録なし' : fmt ? valStr : `${valStr} · 平均比 ${signed(d.amount - avg)}`;
     const label = `${shortDate(d.date)}(${weekdayLabel(d.date)}) ${valStr}`;
     const tipHtml = `<b>${shortDate(d.date)}(${weekdayLabel(d.date)})</b> ${body}`;

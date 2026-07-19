@@ -1,7 +1,9 @@
 import type { LearningAmounts } from '../api';
 import { computeKpis, computeWeekdayStats } from '../derive';
 import { weekdayLabel, shortDate, zenToday, nowMs, durationStr } from '../format';
-import { getStudyTime } from '../studyTime';
+import { getStudyTime, getStudyTimeHours } from '../studyTime';
+import { estimateDailyStudySeconds, estimateHourlyStudySeconds } from '../studyTimeEst';
+import type { WorkTimes } from '../history';
 import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
@@ -289,18 +291,40 @@ async function renderRecentTab(
       ),
     ])
   );
-  // --- 学習時間（この端末の実測・非同期） ---
-  const studyTimePromise = getStudyTime().catch(() => ({}) as Record<string, number>);
+  // --- 学習時間（実測∨推定・非同期） ---
+  // 実測 = アクティブタイム（この端末・可視タブで操作中/動画再生中のみ加算）。
+  // 推定 = 受験記録＋動画実尺＋所要時間実測から復元（計測開始前・他端末の日を埋める）。
+  // 【二重計上防止】実測はテスト/動画の時間を既に含むため加算せず、日ごとに max(実測, 推定)。
   const fmtMin = (m: number): string => durationStr(m * 60);
+  const timeDataPromise = (async () => {
+    const [st, rlogT, skelsT, wtT, hoursMeasured] = await Promise.all([
+      getStudyTime().catch(() => ({}) as Record<string, number>),
+      getResultLog().catch(() => [] as ResultEntry[]),
+      getChapterSkels().catch(() => ({})),
+      getWorkTimes().catch(() => ({}) as WorkTimes),
+      getStudyTimeHours().catch(() => new Array(24).fill(0) as number[]),
+    ]);
+    const movT = interpolateMovieEvents(skelsT, rlogT);
+    const estDaily = estimateDailyStudySeconds(rlogT, movT, wtT);
+    const combined: Record<string, number> = {};
+    const estSet = new Set<string>();
+    for (const d of new Set([...Object.keys(st), ...Object.keys(estDaily)])) {
+      const m = st[d] ?? 0;
+      const e = estDaily[d] ?? 0;
+      combined[d] = Math.max(m, e);
+      if (e > m) estSet.add(d);
+    }
+    return { combined, estSet, hoursMeasured, hoursEst: estimateHourlyStudySeconds(rlogT, movT, wtT) };
+  })();
   const stWrap = h('div', {}, []);
   pane.appendChild(stWrap);
   void (async () => {
-    const st = await studyTimePromise;
-    const stKeys = Object.keys(st).sort();
+    const { combined, estSet } = await timeDataPromise;
+    const stKeys = Object.keys(combined).sort();
     if (!stKeys.length) {
       stWrap.appendChild(
-        section('学習時間', 'この端末で拡張が実測します（可視タブで操作中・動画再生中のみ加算）', [
-          h('div', { class: 'zss-empty' }, ['ZEN Study を開いて学習すると、この端末での学習時間が貯まります。']),
+        section('学習時間', '実測（この端末・操作中/動画再生中のみ）＋受験記録からの推定', [
+          h('div', { class: 'zss-empty' }, ['ZEN Study を開いて学習するか、詳細ログの抽出を実行すると学習時間が表示されます。']),
         ])
       );
       return;
@@ -308,18 +332,18 @@ async function renderRecentTab(
     const stFirst = stKeys[0];
     const stDays = data.daily_amount.map((d) => ({
       date: d.date,
-      amount: d.date < stFirst ? null : Math.round((st[d.date] ?? 0) / 60),
+      amount: d.date < stFirst ? null : Math.round((combined[d.date] ?? 0) / 60),
     }));
     const stVals = stDays.map((d) => d.amount).filter((v): v is number => v !== null);
     const stAvg = stVals.length ? Math.round(stVals.reduce((a, b) => a + b, 0) / stVals.length) : 0;
-    const todaySec = st[isoDate(zenToday())] ?? 0;
+    const todaySec = combined[isoDate(zenToday())] ?? 0;
     stWrap.appendChild(
-      section(`学習時間 · 今日 ${durationStr(todaySec)}`, 'この端末で拡張が実測（可視タブで操作中・動画再生中のみ加算・計測開始前は破線）', [
-        wrapChart(renderDailyBars(stDays, stAvg, tip, fmtMin)),
+      section(`学習時間 · 今日 ${durationStr(todaySec)}`, '実測（この端末・操作中/動画再生中のみ加算）。半透明の棒＝受験記録＋動画実尺からの推定（計測開始前・他端末ぶん）', [
+        wrapChart(renderDailyBars(stDays, stAvg, tip, fmtMin, estSet)),
         dataTable(
           'データを表で見る',
           ['日付', '曜日', '学習時間'],
-          stDays.map((d) => [shortDate(d.date), weekdayLabel(d.date), d.amount === null ? '記録なし' : fmtMin(d.amount)])
+          stDays.map((d) => [shortDate(d.date), weekdayLabel(d.date), d.amount === null ? '記録なし' : `${fmtMin(d.amount)}${estSet.has(d.date) ? '（推定）' : ''}`])
         ),
       ])
     );
@@ -358,10 +382,10 @@ async function renderRecentTab(
   let curView = hasLong ? 'cal' : 'weekday';
   type Basis = 'amount' | 'time';
   let basis: Basis = 'amount';
-  const stMapT = await studyTimePromise;
-  const timeSeries = Object.keys(stMapT)
+  const timeData = await timeDataPromise;
+  const timeSeries = Object.keys(timeData.combined)
     .sort()
-    .map((date) => ({ date, amount: Math.round((stMapT[date] ?? 0) / 60) }));
+    .map((date) => ({ date, amount: Math.round((timeData.combined[date] ?? 0) / 60) }));
   const seriesOf = (b: Basis): { date: string; amount: number }[] => (b === 'time' ? timeSeries : series);
   const fmtOf = (b: Basis): ((v: number) => string) | undefined => (b === 'time' ? fmtMin : undefined);
   const hasData = (b: Basis): boolean => (b === 'time' ? timeSeries.length > 0 : hasLong);
@@ -479,15 +503,52 @@ async function renderRecentTab(
     return h('div', {}, [h('div', { class: 'zss-tsub' }, [seg]), note, chartWrap]);
   };
 
+  // 学習時間の時間帯ビュー（スクリーンタイム風）: 実測バケット / 受験記録＋動画からの推定。
+  // 実測は計測開始以降のみ・推定は導入前/他端末も含むが平均所要ベース。別物なので合算せず切替表示。
+  const buildHourTime = (): HTMLElement => {
+    const NOTES = {
+      meas: '実測の時間帯分布（この端末・計測開始以降の累計）',
+      est: '推定の時間帯分布（受験記録の時刻＋動画実尺＋所要時間実測から復元。導入前・他端末ぶんも含む）',
+    } as const;
+    const measMin = timeData.hoursMeasured.map((s) => Math.round(s / 60));
+    const estMin = timeData.hoursEst.map((s) => Math.round(s / 60));
+    let hm: 'meas' | 'est' = measMin.some((v) => v > 0) ? 'meas' : 'est';
+    const note = h('div', { class: 'zss-tsub-note' }, []);
+    const chartWrap = h('div', {}, []);
+    const seg = h('div', { class: 'zss-seg' }, []);
+    const hmodes: ['meas' | 'est', string][] = [['meas', '実測'], ['est', '推定（受験記録）']];
+    const btns: HTMLElement[] = [];
+    const apply = (): void => {
+      btns.forEach((x, i) => x.classList.toggle('on', hmodes[i][0] === hm));
+      note.textContent = NOTES[hm];
+      chartWrap.textContent = '';
+      const arr = hm === 'meas' ? measMin : estMin;
+      chartWrap.appendChild(
+        arr.some((v) => v > 0)
+          ? wrapChart(renderHourBars(arr, tip, fmtMin))
+          : h('div', { class: 'zss-empty' }, [hm === 'meas' ? '計測が貯まると表示されます（学習中の時間帯を30秒単位で記録）。' : '詳細ログの抽出を実行すると、過去の受験時刻から推定できます。'])
+      );
+    };
+    for (const [m, label] of hmodes) {
+      const bt = h('button', {}, [label]);
+      bt.addEventListener('click', () => {
+        hm = m;
+        apply();
+      });
+      btns.push(bt);
+      seg.appendChild(bt);
+    }
+    apply();
+    return h('div', {}, [h('div', { class: 'zss-tsub' }, [seg]), note, chartWrap]);
+  };
+
   const showView = async (v: string): Promise<void> => {
-    // 時間帯ビューは受験時刻ベース＝学習時間モードには無い → カレンダーへ退避
-    if (basis === 'time' && v === 'hour') v = 'cal';
     curView = v;
     segBtns.forEach((x, i) => x.classList.toggle('on', views[i][0] === v));
     const key = `${basis}:${v}`;
     if (!cache[key]) {
       cache[key] =
-        v === 'hour' ? await buildHour()
+        v === 'hour' ? (basis === 'time' ? buildHourTime() : await buildHour())
         : v === 'trend' ? buildTrend()
         : v === 'weekday' ? buildWeekday()
         : buildCal();
@@ -497,21 +558,19 @@ async function renderRecentTab(
   };
 
   const segOuter = h('div', { class: 'zss-seg' }, [] as HTMLElement[]);
-  const hourBtnIdx = views.findIndex(([v]) => v === 'hour');
   for (const [v, label] of views) {
     const b = h('button', {}, [label]);
     b.addEventListener('click', () => void showView(v));
     segBtns.push(b);
     segOuter.appendChild(b);
   }
-  // 親トグル: データ源（学習数=全学習の件数 / 学習時間=この端末の実測）
+  // 親トグル: データ源（学習数=全学習の件数 / 学習時間=実測∨推定）
   const basisSeg = h('div', { class: 'zss-seg' }, [] as HTMLElement[]);
   const bases: [Basis, string][] = [['amount', '学習数'], ['time', '学習時間']];
   const basisBtns: HTMLElement[] = [];
   const applyBasis = (b: Basis): void => {
     basis = b;
     basisBtns.forEach((x, i) => x.classList.toggle('on', bases[i][0] === b));
-    if (hourBtnIdx >= 0) segBtns[hourBtnIdx].style.display = b === 'time' ? 'none' : '';
     void showView(curView);
   };
   for (const [b, label] of bases) {

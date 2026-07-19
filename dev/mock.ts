@@ -88,8 +88,12 @@ export function installMocks(): LearningAmounts {
   // 日別学習数（実データ）→ カレンダー/トレンド/ストリーク
   __setMockHistory(demo.history as History);
 
-  // 学習時間（デモ用の概算: 学習数×3分。実運用はアクティブタイム実測が貯まる）
-  __setMockStudyTime(Object.fromEntries(Object.entries(demo.history as History).map(([d, n]) => [d, (n as number) * 180])));
+  // 学習時間（デモ用の概算: 学習数×3分・時間帯は hourStats×3分。実運用はアクティブタイム実測が貯まる）
+  const hstat0 = demo.hourStats as { study?: number[] };
+  __setMockStudyTime(
+    Object.fromEntries(Object.entries(demo.history as History).map(([d, n]) => [d, (n as number) * 180])),
+    (hstat0.study ?? new Array(24).fill(0)).map((n: number) => n * 180)
+  );
 
   // 時間帯（実データ）
   const hstat = demo.hourStats as { study?: number[]; visit?: number[] };
