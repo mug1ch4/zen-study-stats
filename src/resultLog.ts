@@ -87,7 +87,13 @@ function hasStorage(): boolean {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type LogMap = Record<string, ResultEntry>;
+let mockResultLog: ResultEntry[] | null = null;
+/** プレビュー/デモ用に結果ログを注入（chrome.storage 無し環境で buildRequiredSeries を動かす）。 */
+export function __setMockResultLog(entries: ResultEntry[]): void {
+  mockResultLog = entries;
+}
 async function loadMap(): Promise<LogMap> {
+  if (mockResultLog) return Object.fromEntries(mockResultLog.map((e) => [String(e.sectionId), e]));
   if (!hasStorage()) return {};
   try {
     const r = await chrome.storage.local.get([KEY_LOG]);

@@ -1,127 +1,88 @@
 // プレビュー/デモ共通のモックデータ。実データは通さず、これを実際の描画コードに流す。
+// 【出典】dev/demoData.json = 実バックアップを匿名化したもの（scripts/anonymize-backup.mjs）。
+//   教科名は一般名・章は「第N回」に置換（著作物の講義名/出版社名を除去）。点数/日時/IDは実値。
 import type { LearningAmounts } from '../src/api';
 import { __setMockHistory, __setMockMaterialHist, __setMockHour, type History } from '../src/history';
 import { __setMockVolumes } from '../src/courseStats';
 import { __setMockCourseMaterials } from '../src/courseApi';
 import { __setMockReport, __setMockLearning } from '../src/api';
+import { __setMockResultLog, type ResultEntry } from '../src/resultLog';
+import demo from './demoData.json';
 
 const met = (ms: number, mc: number, t: number, r: number) => ({
   movieSeconds: ms, movieCount: mc, testCount: t, reportCount: r,
-  testQuestions: t * 2, reportQuestions: r * 10, // 実測に近い問題数（テスト≒2問/本・レポート≒10問/本）
+  testQuestions: t * 2, reportQuestions: r * 10,
 });
 
-// モック履歴（約50日）を注入して カレンダー/トレンド/ストリーク を埋める
-function mockHistory(): History {
-  const h: History = {};
-  const today = new Date();
-  for (let i = 49; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const p = (n: number) => String(n).padStart(2, '0');
-    const iso = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-    const wd = d.getDay();
-    if (i % 11 === 3) continue; // 欠損日
-    const base = wd === 0 || wd === 6 ? 8 : 22;
-    h[iso] = Math.max(0, Math.round(base + Math.sin(i / 3) * 12 + (i % 7) * 2 - 6));
-  }
-  return h;
-}
-
-// 教材消化(passed_materials)の日次スナップ履歴。予測タブの「実績カーブ」の元データ。
-// 現在の完了(320=各コース passed の合計)に至る、約45日の単調増加を組む。
-function mockMaterialHist(): History {
-  const h: History = {};
-  const today = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  const days = 45;
-  const start = 150;
-  const end = 320; // = 250+60+10（各コースの passed 合計）＝現在値に一致させる
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const iso = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-    const frac = (days - 1 - i) / (days - 1); // 0→1
-    // なだらかな加速（後半に少し伸びる）＋端は現在値に固定。単調増加（減少はロールオーバー扱いで捨てられるため）。
-    const passed = i === 0 ? end : Math.round(start + (end - start) * (0.35 * frac + 0.65 * frac * frac));
-    h[iso] = passed;
-  }
-  return h;
+/** demoData の日別学習数(history)から直近14日の LearningAmounts を組む。 */
+function learningFromHistory(hist: History): LearningAmounts {
+  const dates = Object.keys(hist).sort();
+  const last14 = dates.slice(-14);
+  const daily = last14.map((date) => ({ date, amount: hist[date] as number | null }));
+  const total = dates.reduce((a, d) => a + (hist[d] || 0), 0);
+  const recent = last14.map((d) => hist[d] || 0);
+  const avg = recent.length ? Math.round((recent.reduce((a, b) => a + b, 0) / recent.length) * 10) / 10 : 0;
+  return { total_amount: total, average_amount: avg, daily_amount: daily };
 }
 
 /** 全モックを注入し、直近14日の学習数サンプルを返す。 */
 export function installMocks(): LearningAmounts {
-  // 教科別 教材（合計1500・完了320・未着手2教科）
-  __setMockCourseMaterials([
-    { id: 1, title: 'サンプル英語', total: 400, passed: 250 },
-    { id: 2, title: 'サンプル数学', total: 350, passed: 60 },
-    { id: 3, title: 'サンプル理科', total: 300, passed: 10 },
-    { id: 4, title: 'サンプル情報', total: 250, passed: 0 },
-    { id: 5, title: 'サンプル国語', total: 200, passed: 0 },
-  ]);
+  // 教科別 教材（実データ：合計1220・現在完了255・匿名化タイトル）
+  __setMockCourseMaterials(demo.courses.map((c) => ({ id: c.id, title: c.title, total: c.total, passed: c.passed })));
 
-  // 教材消化(passed_materials)の日次履歴。実績カーブ・予測(モンテカルロ)の元データ（total=1500）。
-  __setMockMaterialHist(mockMaterialHist(), 1500);
+  // 教材消化(passed_materials)の日次履歴（実データ・薄い＝2日）。総数は materialTotal。
+  __setMockMaterialHist(demo.materialHist as History, demo.materialTotal);
 
-  // レポート完了予測のモック（合計50・完了20・残30、締切12/15）
+  // 受験アンカー（実データ・96件）。buildRequiredSeries がこれで過去を復元する。
+  __setMockResultLog(Object.values(demo.resultLog) as ResultEntry[]);
+
+  // レポート完了予測（締切構造は実運用に近い合成。教材総数は実データ1220に合わせる）。
   __setMockReport({
     finalDeadline: '2026-12-15T23:59:59+09:00',
     months: [
-      { year: 2026, month: 6, deadline: '2026-06-15T23:59:59+09:00', total: 6, passed: 6 },
-      { year: 2026, month: 7, deadline: '2026-07-15T23:59:59+09:00', total: 7, passed: 5 },
-      { year: 2026, month: 8, deadline: '2026-08-15T23:59:59+09:00', total: 10, passed: 4 },
-      { year: 2026, month: 9, deadline: '2026-09-15T23:59:59+09:00', total: 5, passed: 2 },
-      { year: 2026, month: 10, deadline: '2026-10-15T23:59:59+09:00', total: 8, passed: 2 },
-      { year: 2026, month: 11, deadline: '2026-11-15T23:59:59+09:00', total: 8, passed: 1 },
+      { year: 2026, month: 6, deadline: '2026-06-15T23:59:59+09:00', total: 6, passed: 1 },
+      { year: 2026, month: 7, deadline: '2026-07-15T23:59:59+09:00', total: 7, passed: 2 },
+      { year: 2026, month: 8, deadline: '2026-08-15T23:59:59+09:00', total: 10, passed: 2 },
+      { year: 2026, month: 9, deadline: '2026-09-15T23:59:59+09:00', total: 5, passed: 0 },
+      { year: 2026, month: 10, deadline: '2026-10-15T23:59:59+09:00', total: 8, passed: 0 },
+      { year: 2026, month: 11, deadline: '2026-11-15T23:59:59+09:00', total: 8, passed: 0 },
       { year: 2026, month: 12, deadline: '2026-12-15T23:59:59+09:00', total: 6, passed: 0 },
     ],
     totalReports: 50,
-    passedReports: 20,
+    passedReports: 7,
     requiredCourseCount: 9,
-    takingCourseCount: 11,
+    takingCourseCount: 15,
   });
 
-  // コースボリューム（動画時間/テスト/レポートの残/総・教科別シェアの確認用）
+  // コースボリューム（教科タブの詳細グラフ用・匿名化タイトル）
   const supp = (ms: number, mc: number) => ({ total: met(ms, mc, 0, 0), remaining: met(ms, mc, 0, 0) });
-  __setMockVolumes([
-    { id: 1, title: 'サンプル英語', total: met(41876, 163, 72, 24), remaining: met(17932, 64, 24, 8), supp: supp(1800, 4), totalMaterials: 400, passedMaterials: 250, totalChapters: 12, passedChapters: 7,
-      chapters: [
-        { id: 1, title: '第1回　導入', total: met(1200, 8, 6, 2), remaining: met(0, 0, 0, 0), passed: 19, totalCount: 19 },
-        { id: 2, title: '第7回　応用', total: met(3067, 13, 6, 2), remaining: met(1400, 6, 3, 1), passed: 15, totalCount: 21 },
-      ] },
-    { id: 2, title: 'サンプル数学', total: met(28800, 120, 60, 20), remaining: met(24000, 100, 50, 17), supp: supp(4200, 8), totalMaterials: 350, passedMaterials: 60, totalChapters: 9, passedChapters: 1,
-      chapters: [{ id: 3, title: '第1回　基礎', total: met(2400, 10, 6, 2), remaining: met(2000, 8, 5, 2), passed: 2, totalCount: 24 }] },
-    { id: 4, title: 'サンプル情報', total: met(18000, 80, 40, 12), remaining: met(18000, 80, 40, 12), supp: supp(0, 0), totalMaterials: 250, passedMaterials: 0, totalChapters: 4, passedChapters: 0,
-      chapters: [{ id: 4, title: '第1回　はじめに', total: met(3100, 13, 6, 2), remaining: met(3100, 13, 6, 2), passed: 0, totalCount: 21 }] },
-  ]);
+  __setMockVolumes(
+    demo.courseVol.map((c) => {
+      const remMovie = Math.max(0, c.movieSeconds - Math.round((c.movieSeconds * c.passedMaterials) / Math.max(1, c.totalMaterials)));
+      return {
+        id: c.id, title: c.title,
+        total: met(c.movieSeconds, c.movieCount, c.testCount, c.reportCount),
+        remaining: met(remMovie, Math.round((c.movieCount * (c.totalMaterials - c.passedMaterials)) / Math.max(1, c.totalMaterials)), 0, 0),
+        supp: supp(0, 0),
+        totalMaterials: c.totalMaterials, passedMaterials: c.passedMaterials,
+        totalChapters: c.totalChapters, passedChapters: c.passedChapters,
+        chapters: c.chapters.map((ch) => ({
+          id: ch.id, title: ch.title,
+          total: met(ch.movieSeconds, ch.movieCount, ch.testCount, ch.reportCount),
+          remaining: met(0, 0, 0, 0), passed: ch.passed, totalCount: ch.total,
+        })),
+      };
+    })
+  );
 
-  __setMockHistory(mockHistory());
+  // 日別学習数（実データ）→ カレンダー/トレンド/ストリーク
+  __setMockHistory(demo.history as History);
 
-  // 時間帯モック（夜型: 20〜22時に学習ピーク）
-  const hs = new Array(24).fill(0);
-  const hv = new Array(24).fill(0);
-  ([[20, 40], [21, 55], [22, 30], [16, 12], [8, 6], [12, 8]] as [number, number][]).forEach(([hh, n]) => { hs[hh] = n; hv[hh] = Math.round(n / 8) + 1; });
-  __setMockHour(hs, hv);
+  // 時間帯（実データ）
+  const hstat = demo.hourStats as { study?: number[]; visit?: number[] };
+  __setMockHour(hstat.study ?? new Array(24).fill(0), hstat.visit ?? new Array(24).fill(0));
 
-  const sample: LearningAmounts = {
-    total_amount: 230,
-    average_amount: 20.9,
-    daily_amount: [
-      { date: '2026-07-04', amount: null },
-      { date: '2026-07-05', amount: null },
-      { date: '2026-07-06', amount: 18 },
-      { date: '2026-07-07', amount: 6 },
-      { date: '2026-07-08', amount: 4 },
-      { date: '2026-07-09', amount: 0 },
-      { date: '2026-07-10', amount: 23 },
-      { date: '2026-07-11', amount: 26 },
-      { date: '2026-07-12', amount: 16 },
-      { date: '2026-07-13', amount: 38 },
-      { date: '2026-07-14', amount: 21 },
-      { date: '2026-07-15', amount: 46 },
-      { date: '2026-07-16', amount: 28 },
-      { date: '2026-07-17', amount: 4 },
-    ],
-  };
+  const sample = learningFromHistory(demo.history as History);
   __setMockLearning(sample);
   return sample;
 }
