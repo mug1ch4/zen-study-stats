@@ -1,7 +1,7 @@
 // コンテンツスクリプトのエントリ。
 // 【第一原則】GETのみ・read-only。DOMは自ブラウザの描画変更のみ。学習記録は一切変更しない。
 import { fetchLearningAmounts, fetchReportProgresses, type LearningAmounts } from './api';
-import { fetchMaterialTotals, fetchCourseMaterials, fetchSectionQuestions, fetchElectiveCourses } from './courseApi';
+import { fetchCourseMaterials, fetchSectionQuestions, fetchElectiveCourses } from './courseApi';
 import { applyOverwrite, removeCard, hideOriginalNow } from './inject';
 import { initDarkMode, initDarkModeFrame, preInitDarkMode, syncOurCard, rescanSoon, ensureToggleMounted, refreshNavToggle } from './darkmode';
 import { maybeDailySnapshot, mergeWindow, snapshotReports, snapshotMaterials, snapshotCoursePassed, snapshotElectivePassed, recordVisit, recordCompletion, getLastPassed, setLastPassed, ensureDayStart, ensureWeekStart, weekBaselinePassed, getSeries, recordWorkTime, recordDeadlineOutcomes } from './history';
@@ -182,7 +182,13 @@ async function settleCompletion(attempt: number): Promise<void> {
 }
 async function settleCompletionBody(attempt: number): Promise<void> {
   try {
-    const mt = await fetchMaterialTotals({ fresh: true }); // 実際の passed/total（キャッシュ不可・最新必須）
+    // 実際の passed/total（キャッシュ不可・最新必須）。教科別も取り、日次スナップを機会的に更新する
+    // （日次スナップは同日上書き=upsert。初回ロード時の取得失敗でその日の点が欠ける問題を自己修復し、
+    //  1日の最後の完了時点の値が残る＝終業値に近づく）。
+    const courses = await fetchCourseMaterials({ fresh: true });
+    const mt = { passed: courses.reduce((a, c) => a + c.passed, 0), total: courses.reduce((a, c) => a + c.total, 0) };
+    void snapshotMaterials(mt.passed, mt.total);
+    void snapshotCoursePassed(courses);
     const prev = await getLastPassed();
     if (prev === null) {
       await setLastPassed(mt.passed); // 初回は基準値のみ（過去分を誤カウントしない）

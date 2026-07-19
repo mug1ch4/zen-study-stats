@@ -5,7 +5,7 @@ import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
 import { renderWeekdayBars } from '../charts/weekdayBars';
-import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, weekBaselinePassed, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements, getWorkTimes, getIncludeSupp, setIncludeSupp, getCoursePassedHistory, recordDeadlineOutcomes, getDeadlineOutcomes } from '../history';
+import { getSeries, getMaterialHistory, getTargetDate, setTargetDate, getHourStats, getDayStart, ensureDayStart, getWeekStart, ensureWeekStart, weekBaselinePassed, getWeekGoal, setWeekGoal, savePredSnapshot, getPredLog, getAchievementDates, recordAchievements, getWorkTimes, getIncludeSupp, setIncludeSupp, getCoursePassedHistory, recordDeadlineOutcomes, getDeadlineOutcomes, snapshotMaterials, snapshotCoursePassed } from '../history';
 import { ACHIEVEMENTS, computeUnlocked, type AchInput } from '../achievements';
 import { evaluateCalibration } from '../calibration';
 import { reportDeadlineStatus, type DeadlineStatus } from '../deadlines';
@@ -477,6 +477,10 @@ async function renderPredictTab(
     const courses = await getCourses();
     const total = courses.reduce((a, c) => a + c.total, 0);
     const passed = courses.reduce((a, c) => a + c.passed, 0);
+    // 機会的スナップ（同日上書き=upsert）: 初回ロード時の日次スナップ失敗でその日の点が欠ける
+    // 問題を、カードを開いたタイミングでも自己修復する（正準系列の骨格＝MHを絶やさない）。
+    void snapshotMaterials(passed, total);
+    void snapshotCoursePassed(courses.map((c) => ({ id: c.id, passed: c.passed })));
     const mh = await getMaterialHistory();
     // 教科別バーンダウン用: 直接観測(coursePassedHist)＋抽出ログ(受験アンカー・補間動画)
     const [subjCoursePassedHist, subjResultLog, subjSkels] = await Promise.all([
@@ -514,9 +518,11 @@ async function renderPredictTab(
       la: merged,
     });
 
-    // 日次サンプル（モンテカルロ/EWMA/曜日重み）: delta が確定/推定できた日のみ（null=不明は含めない）
+    // 日次サンプル（モンテカルロ/EWMA/曜日重み）: delta が確定/推定できた日のみ（null=不明は含めない）。
+    // 今日はまだ途中（部分日）なので、丸1日のサンプルとして混ぜない（朝に開くと下方バイアスになる）。
+    const todayIso2 = isoDate(zenToday());
     const dailySamples = series2.points
-      .filter((p) => p.delta !== null)
+      .filter((p) => p.delta !== null && p.date !== todayIso2)
       .map((p) => ({ weekday: new Date(p.date + 'T12:00:00').getDay(), value: p.delta! }));
     // フォールバックペース: 系列の直近28日の cum 差分（不明日も日数に含む正しい平均）
     const fallbackPerDay = seriesRecentPace(series2, 28) ?? undefined;
@@ -730,22 +736,32 @@ async function renderAnalysisTab(
     for (const p of series) dayMap.set(p.date, p.amount);
     for (const d of data.daily_amount) if (d.amount != null) dayMap.set(d.date, d.amount);
     const merged = [...dayMap.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, amount]) => ({ date, amount }));
-    // 必修アドバイスの「現在ペース」は必修の教材消化(passed_materials)の直近差分で判定する。
-    // learning_amounts(合算)だと非必修を多くやった日が「必修が順調」と誤判定するため。
-    // materialHistory が薄い(<2)ときだけ合算にフォールバック（その旨は requiredAdvice 側の文脈で許容）。
-    const nowMs = zenToday().getTime();
-    const matRec = mh.series.filter((p) => nowMs - new Date(p.date + 'T12:00:00').getTime() <= 28 * 86400000);
-    let recentPerDay: number | null = null;
-    if (matRec.length >= 2) {
-      const a = matRec[0];
-      const b = matRec[matRec.length - 1];
-      const days = Math.max(1, (new Date(b.date + 'T12:00:00').getTime() - new Date(a.date + 'T12:00:00').getTime()) / 86400000);
-      if (b.passed >= a.passed) recentPerDay = (b.passed - a.passed) / days;
+    // 必修アドバイスの「現在ペース」も正準系列（buildRequiredSeries）から。
+    // 予測タブと同じ源＝表示間の矛盾（予測は順調・分析は不足、等）を構造的に防ぐ。
+    const totalMatA = courses.reduce((a, c) => a + c.total, 0);
+    const passedMatA = courses.reduce((a, c) => a + c.passed, 0);
+    let reqIdsA: Set<number> | null = null;
+    try {
+      reqIdsA = await getRequiredCourseIds();
+    } catch {
+      /* 判定不可＝全件 */
     }
-    if (recentPerDay === null) {
-      const last14 = merged.slice(-14);
-      recentPerDay = last14.length ? last14.reduce((a, p) => a + p.amount, 0) / last14.length : null;
-    }
+    const rlogA = await getResultLog().catch(() => [] as ResultEntry[]);
+    const skelsA = await getChapterSkels().catch(() => ({}));
+    const movA = interpolateMovieEvents(skelsA, rlogA);
+    const reqEventsA = completionEvents(
+      reqIdsA ? rlogA.filter((e) => reqIdsA!.has(e.courseId)) : rlogA,
+      reqIdsA ? movA.filter((m) => reqIdsA!.has(m.courseId)) : movA
+    );
+    const seriesA = buildRequiredSeries({
+      mh: mh.series,
+      anchorEvents: reqEventsA,
+      passedNow: passedMatA,
+      totalNow: totalMatA,
+      todayISO: isoDate(zenToday()),
+      la: merged,
+    });
+    const recentPerDay = seriesRecentPace(seriesA, 28);
 
     // 実績の判定を先に（歩みサマリで使う）
     const streak0 = streakInfo(merged);
@@ -762,7 +778,7 @@ async function renderAnalysisTab(
     const unlocked0 = new Set(computeUnlocked(achInput0));
 
     // 詳細ログ（収集済みなら遡及実測セクションを挿入。未収集なら何も出さない）
-    const resultLog = await getResultLog().catch(() => []);
+    const resultLog = rlogA; // 上で取得済みを再利用
     const retro = resultLog.length ? retroSections(resultLog, new Map(courses.map((c) => [c.id, c.title]))) : [];
 
     const sections: Section[] = [

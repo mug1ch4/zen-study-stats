@@ -96,11 +96,15 @@ export function buildRequiredSeries(input: RequiredSeriesInput): RequiredSeries 
   const noAnchors = anchorDelta.size === 0;
   const noMh = cps.length <= 1; // 今日(ライブ)しか無い
   if (noAnchors && noMh) {
-    const la = (input.la ?? []).filter((p) => p.date >= startDate && p.date <= today);
+    // 系列範囲はチェックポイント（=今日のみ）でなく LA の全期間（上限 MAX_DAYS）。
+    const laAll = (input.la ?? []).filter((p) => p.date <= today).sort((a, b) => (a.date < b.date ? -1 : 1));
+    let laStart = laAll.length ? laAll[0].date : today;
+    if (daysBetween(laStart, today) > MAX_DAYS - 1) laStart = addDaysISO(today, -(MAX_DAYS - 1));
+    const la = laAll.filter((p) => p.date >= laStart);
     let cum = input.passedNow;
     const rev: SeriesPoint[] = [];
     rev.push({ date: today, delta: la.find((p) => p.date === today)?.amount ?? null, cum, source: 'approx', estimated: false });
-    for (let d = addDaysISO(today, -1); d >= startDate && la.length; d = addDaysISO(d, -1)) {
+    for (let d = addDaysISO(today, -1); d >= laStart; d = addDaysISO(d, -1)) {
       const amt = la.find((p) => p.date === d)?.amount ?? null;
       cum = Math.max(0, cum - (rev[rev.length - 1].delta ?? 0));
       rev.push({ date: d, delta: amt, cum, source: 'approx', estimated: true });

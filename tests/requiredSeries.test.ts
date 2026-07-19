@@ -114,7 +114,7 @@ describe('buildRequiredSeries', () => {
     expect(point(s, '2026-07-12')?.delta).toBeGreaterThan(0); // 新課程のアンカーは活きる
   });
 
-  it('LAフォールバック: MH・アンカー皆無のときのみ approx で成立', () => {
+  it('LAフォールバック: MH・アンカー皆無のとき LA の全期間ぶんの系列を組む', () => {
     const s = buildRequiredSeries(
       base({
         la: [
@@ -125,9 +125,14 @@ describe('buildRequiredSeries', () => {
         passedNow: 100,
       })
     );
-    expect(s.quality.approxDays).toBeGreaterThan(0);
+    expect(s.points.length).toBe(3); // 今日1点だけにならない（過去のLA日も系列化）
+    expect(s.quality.approxDays).toBe(3);
+    expect(s.quality.validDays).toBe(3);
     expect(s.points.every((p) => p.source === 'approx')).toBe(true);
     expect(s.points[s.points.length - 1].cum).toBe(100);
+    // cum は後方積み戻し: 7/18終了=100-3=97, 7/17終了=97-5=92
+    expect(s.points.find((p) => p.date === '2026-07-18')?.cum).toBe(97);
+    expect(s.points.find((p) => p.date === '2026-07-17')?.cum).toBe(92);
   });
 
   it('quality.validDays = delta!=null の日数', () => {

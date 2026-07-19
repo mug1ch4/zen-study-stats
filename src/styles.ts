@@ -141,7 +141,8 @@ export const CSS = `
 .zss-tsub-note { font-size: 11px; color: var(--faint); margin: 2px 0 4px; }
 .zss-cal-wrap { overflow-x: auto; max-width: 100%; margin-top: 2px; padding-bottom: 2px; }
 .zss-cal-wrap svg { display: block; }
-.zss-cal-legend { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.zss-cal-legend { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+.zss-cal-legend > span { white-space: nowrap; } /* 項目の途中で折り返さない（「必要ライ/ン」防止・折返しは項目単位） */
 .zss-cal-legend .sw { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
 .zss-empty { font-size: 12px; color: var(--faint); padding: 10px 0; }
 
