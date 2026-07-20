@@ -34,9 +34,39 @@ describe('computePrediction', () => {
       dailySamples: samples,
     });
     expect(p.montecarlo).not.toBeNull();
+    expect(p.mcBasis).toBe('material');
     expect(p.pOnTime).not.toBeNull();
     expect(p.pOnTime!).toBeGreaterThan(0.95); // 10/日で残100・60日 → 余裕
+    expect(p.pOnTime!).toBeLessThanOrEqual(0.99); // 100%は表示しない（長期の行動予測に確実は無い）
     expect(p.confidence.level).not.toBe('low');
+  });
+  it('時間ベース入力があればヘッドラインMCは時間単位・帯は教材数へ逆換算', () => {
+    // 残100教材 ≈ 残50時間（平均1800秒/教材）。学習時間 2h/日 → 25日で完了（60日締切に余裕）
+    const timeSamples = Array.from({ length: 14 }, (_, i) => ({ weekday: i % 7, value: 7200 }));
+    const p = computePrediction({
+      totalMaterials: 200, passedMaterials: 100, materialSeries: [],
+      finalDeadline: deadlineIn(60), months: [], remainingReports: 0,
+      dailySamples: Array.from({ length: 14 }, (_, i) => ({ weekday: i % 7, value: 100 })), // 教材ベースなら1日で終わる値
+      time: { remainSec: 100 * 1800, dailySamples: timeSamples },
+    });
+    expect(p.mcBasis).toBe('time');
+    expect(p.montecarlo).not.toBeNull();
+    // 教材ベース(100/日→1日)でなく時間ベース(2h/日→約25日)の完了日になっている
+    expect(p.montecarlo!.p50Days).toBeGreaterThan(15);
+    expect(p.montecarlo!.p50Days).toBeLessThan(40);
+    // 帯は教材数に換算されている（初日残 ≈ 100教材のオーダー・秒のままなら180000）
+    const b0 = p.montecarlo!.band[0];
+    expect(b0.p50).toBeLessThanOrEqual(100.5);
+    expect(p.pOnTime!).toBeLessThanOrEqual(0.99);
+  });
+  it('時間サンプルが5日未満なら教材ベースへフォールバック', () => {
+    const p = computePrediction({
+      totalMaterials: 200, passedMaterials: 100, materialSeries: [],
+      finalDeadline: deadlineIn(60), months: [], remainingReports: 0,
+      dailySamples: Array.from({ length: 14 }, (_, i) => ({ weekday: i % 7, value: 10 })),
+      time: { remainSec: 100 * 1800, dailySamples: [{ weekday: 1, value: 7200 }] },
+    });
+    expect(p.mcBasis).toBe('material');
   });
 });
 

@@ -54,6 +54,11 @@ export interface PredInput {
   weekdayWeights?: number[];
   /** 日次消化の実測サンプル（モンテカルロ＆EWMA用）。value=その日の消化数, weekday=0..6。 */
   dailySamples?: { weekday: number; value: number }[];
+  /** 時間ベースMC用（あればヘッドラインMCはこちらを使う）。
+   *  教材数ベースは「過去に消化した教材の重さ ≠ 残りの重さ」で偏る（軽い英語だけ消化して
+   *  きた履歴だと楽観）ため、残り時間（教科別の重さで換算）を日別学習時間でシミュレーションする。
+   *  remainSec = Σ教科 残り教材×秒/教材、dailySamples = 日別学習秒（実測∨推定・今日除く）。 */
+  time?: { remainSec: number; dailySamples: { weekday: number; value: number }[] };
 }
 
 /** 手法別の見立て。 */
@@ -85,7 +90,8 @@ export interface Prediction {
   estimates: PaceEstimate[]; // 手法別の見立て（併記用）
   untouchedSubjects: number; // 未着手（passed=0, total>0）の教科数
   projectionCurve: { date: string; remaining: number }[]; // 曜日/祝日考慮の予測カーブ（MC無し時のフォールバック）
-  montecarlo: MonteCarloResult | null; // モンテカルロ（確率・パーセンタイル帯）
+  montecarlo: MonteCarloResult | null; // モンテカルロ（確率・パーセンタイル帯。帯は教材数に換算済み）
+  mcBasis: 'time' | 'material' | null; // ヘッドラインMCの単位（time=時間ベース・教材構成バイアスなし）
   pOnTime: number | null; // 締切に間に合う確率
   confidence: { level: 'low' | 'medium' | 'high'; days: number }; // 予測の確度（データ成熟度）
   analysis: {
@@ -181,17 +187,38 @@ export function computePrediction(input: PredInput): Prediction {
       ? projectCurve(remaining, detPerDay, weights, today)
       : [{ date: todayISO(), remaining }];
 
-  // ---- モンテカルロ: 日次消化を曜日別にサンプリングして完了日の分布を得る ----
+  // ---- モンテカルロ: 完了日の分布を得る ----
+  // 優先: 時間ベース（残り秒を日別学習秒でサンプリング）。教材数ベースは
+  // 「過去に消化した教材の重さ ≠ 残りの重さ」の構成バイアスを持つ（実測で残りは1.8倍重く
+  // p50が2〜4週楽観だった）ため、時間データが十分ならそちらをヘッドラインにする。
+  // バーンダウン帯・キャリブレーション用に、時間の帯は残り平均秒/教材で教材数へ逆換算する。
+  const horizon = Math.ceil(daysLeft) + 21;
   let montecarlo: MonteCarloResult | null = null;
-  if (remaining > 0 && input.dailySamples && input.dailySamples.length >= 5) {
+  let mcBasis: Prediction['mcBasis'] = null;
+  const t = input.time;
+  if (remaining > 0 && t && t.remainSec > 0 && t.dailySamples.length >= 5) {
+    const byWd: number[][] = [[], [], [], [], [], [], []];
+    const overall: number[] = [];
+    for (const s of t.dailySamples) {
+      byWd[s.weekday].push(s.value);
+      overall.push(s.value);
+    }
+    const mcT = simulate(t.remainSec, byWd, overall, today, finalDeadline, horizon);
+    if (mcT) {
+      const avgSec = t.remainSec / remaining; // 残り教材の平均の重さ（表示換算用）
+      montecarlo = { ...mcT, band: mcT.band.map((b) => ({ ...b, p15: b.p15 / avgSec, p50: b.p50 / avgSec, p85: b.p85 / avgSec })) };
+      mcBasis = 'time';
+    }
+  }
+  if (!montecarlo && remaining > 0 && input.dailySamples && input.dailySamples.length >= 5) {
     const byWd: number[][] = [[], [], [], [], [], [], []];
     const overall: number[] = [];
     for (const s of input.dailySamples) {
       byWd[s.weekday].push(s.value);
       overall.push(s.value);
     }
-    const horizon = Math.ceil(daysLeft) + 21;
     montecarlo = simulate(remaining, byWd, overall, today, finalDeadline, horizon);
+    if (montecarlo) mcBasis = 'material';
   }
 
   // 完了見込み: モンテカルロの中央値(P50)を主とし、無ければ決定カーブ
@@ -201,7 +228,8 @@ export function computePrediction(input: PredInput): Prediction {
       : null;
   const projectedFinish = remaining === 0 ? today : montecarlo ? montecarlo.p50 : detFinish;
   const daysVsDeadline = projectedFinish ? daysBetween(finalDeadline, projectedFinish) : null;
-  const pOnTime = remaining === 0 ? 1 : montecarlo ? montecarlo.pOnTime : null;
+  // 100%は表示しない: 数ヶ月先の行動予測に確実は無い（長期離脱等のモデル外リスク）→ 99%上限
+  const pOnTime = remaining === 0 ? 1 : montecarlo ? Math.min(0.99, montecarlo.pOnTime) : null;
   // 間に合う判定: モンテカルロがあれば確率85%以上、無ければ見込み日が締切以内
   const onTrack =
     remaining === 0
@@ -211,7 +239,7 @@ export function computePrediction(input: PredInput): Prediction {
         : projectedFinish !== null && projectedFinish.getTime() <= finalDeadline.getTime();
 
   // 予測の確度（データ成熟度）: 日次サンプル数と母数不確実性から。新規ユーザーに「暫定」を明示。
-  const sampleDays = input.dailySamples?.length ?? 0;
+  const sampleDays = (mcBasis === 'time' ? input.time?.dailySamples.length : input.dailySamples?.length) ?? 0;
   const relSE = montecarlo?.relSE ?? 1;
   const level: Prediction['confidence']['level'] =
     sampleDays >= 14 && relSE < 0.22 ? 'high' : sampleDays >= 6 ? 'medium' : 'low';
@@ -250,7 +278,7 @@ export function computePrediction(input: PredInput): Prediction {
     requiredPerWeek, requiredPerDay, currentPerWeek, paceSource,
     projectedFinish, daysVsDeadline, onTrack, months, startDate,
     remainingReports: input.remainingReports, estimates, untouchedSubjects, projectionCurve,
-    montecarlo, pOnTime,
+    montecarlo, mcBasis, pOnTime,
     confidence: { level, days: sampleDays },
     analysis: { tomorrowEstimate, tomorrowRequired, trend, trendPct },
   };

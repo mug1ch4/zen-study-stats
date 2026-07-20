@@ -670,6 +670,24 @@ async function renderPredictTab(
     const overallDaily = dailySamples.length ? allSum / dailySamples.length : 1;
     const weekdayWeights = wdSum.map((s, i) => bayesianAverage(s, wdCnt[i], overallDaily, 3));
 
+    // 時間ベースの入力（ヘッドラインMC用・§3.7）: 残り時間=Σ教科残×秒/教材、
+    // 日次サンプル=学習時間系列（実測∨推定・今日除く）。教材数ベースの構成バイアス
+    // （残りは消化済みの1.8倍重い等）を受けない。データ不足ならnullで教材ベースにフォールバック。
+    let timeInput: { remainSec: number; dailySamples: { weekday: number; value: number }[] } | null = null;
+    let timeData: StudyTimeData | null = null;
+    try {
+      timeData = await computeStudyTimeData(merged, todayIso2);
+      if (timeData.conv.global !== null) {
+        const remainSec = courses.reduce((a, c) => a + Math.max(0, c.total - c.passed) * (timeData!.conv.byCourse.get(c.id) ?? timeData!.conv.global!), 0);
+        const timeSamples = Object.keys(timeData.combined)
+          .filter((dd) => dd !== todayIso2)
+          .map((dd) => ({ weekday: new Date(dd + 'T12:00:00').getDay(), value: timeData!.combined[dd] }));
+        if (remainSec > 0 && timeSamples.length >= 5) timeInput = { remainSec, dailySamples: timeSamples };
+      }
+    } catch {
+      /* 時間データが作れなければ教材ベースにフォールバック */
+    }
+
     const pred = computePrediction({
       totalMaterials: total,
       passedMaterials: passed,
@@ -681,6 +699,7 @@ async function renderPredictTab(
       courses: courses.map((c) => ({ total: c.total, passed: c.passed })),
       weekdayWeights,
       dailySamples,
+      time: timeInput ?? undefined,
     });
 
     // 実績カーブも正準系列から: 確定点(estimated=false)=実線、全系列=点線（推定含む連続カーブ）。
@@ -758,18 +777,10 @@ async function renderPredictTab(
         ? `予測の的中率: これまでの予測のうち実績が P15〜85 帯に収まった割合 ${Math.round(cal.coverage * 100)}%（${cal.n}件で検証・理想は70%前後）。傾向: ${cal.bias === 'optimistic' ? 'やや楽観寄り（実際は予測より遅れがち）' : cal.bias === 'pessimistic' ? 'やや悲観寄り（実際は予測より速い）' : 'バランス良好'}。`
         : `予測の的中率: 検証データを蓄積中（予測と後日の実績の突き合わせ ${cal.n}/5件〜で表示）。`;
 
-    // 時間ベースの検算: 残り教材を教科別の重さで時間換算し、学習時間ペースで独立に見積もる
-    // （教材数ベースは残りの構成が過去より重いと楽観に寄るため）。データ不足なら黙って省略。
-    let timeCheck: { remainSec: number; recentSecPerDay: number | null } | null = null;
-    try {
-      const td: StudyTimeData = await computeStudyTimeData(merged, isoDate(zenToday()));
-      if (td.conv.global !== null) {
-        const remainSec = courses.reduce((a, c) => a + Math.max(0, c.total - c.passed) * (td.conv.byCourse.get(c.id) ?? td.conv.global!), 0);
-        timeCheck = { remainSec, recentSecPerDay: recentStudySecPerDay(td.combined, isoDate(zenToday())) };
-      }
-    } catch {
-      /* 検算は補助情報。失敗しても本流を妨げない */
-    }
+    // 時間ベースの補足表示（残り時間・必要分/日）。ヘッドラインMCが時間ベースのときは
+    // ETA行を重複させない（renderPredictorSection 側で pred.mcBasis を見て制御）。
+    const timeCheck: { remainSec: number; recentSecPerDay: number | null } | null =
+      timeInput && timeData ? { remainSec: timeInput.remainSec, recentSecPerDay: recentStudySecPerDay(timeData.combined, todayIso2) } : null;
 
     pane.textContent = '';
     pane.appendChild(
@@ -1676,16 +1687,17 @@ function renderPredictorSection(
     const hrs = Math.round(tc.remainSec / 3600);
     const reqMin = pred.daysLeft > 0 ? Math.ceil(tc.remainSec / pred.daysLeft / 60) : Infinity;
     rows.push(
-      analysisLine('note', `時間ベースの検算: 残り ≈ ${hrs}時間（教科別の教材の重さで換算）${isFinite(reqMin) ? ` → 締切までは 1日 約${reqMin}分` : ''}`)
+      analysisLine('note', `残り ≈ ${hrs}時間（教科別の教材の重さで換算）${isFinite(reqMin) ? ` → 締切までは 1日 約${reqMin}分` : ''}${tc.recentSecPerDay && tc.recentSecPerDay > 60 ? `・直近の学習時間 平均 ${durationStr(Math.round(tc.recentSecPerDay))}/日` : ''}`)
     );
-    if (tc.recentSecPerDay && tc.recentSecPerDay > 60) {
+    // ヘッドラインMCが教材ベースのときだけ、時間ベースのETAを独立検算として出す（時間MC時は重複）
+    if (pred.mcBasis !== 'time' && tc.recentSecPerDay && tc.recentSecPerDay > 60) {
       const etaDays = Math.ceil(tc.remainSec / tc.recentSecPerDay);
       const eta = new Date(zenToday().getTime() + etaDays * 86400000);
       const ok = eta.getTime() <= pred.finalDeadline.getTime();
       rows.push(
         analysisLine(
           ok ? 'good' : 'warn',
-          `直近の学習時間 平均 ${durationStr(Math.round(tc.recentSecPerDay))}/日 なら ${md(eta)} ごろ完了（時間ベース${ok ? 'でも間に合う見込み' : 'では締切超過の恐れ'}）`
+          `直近の学習時間 平均なら ${md(eta)} ごろ完了（時間ベース${ok ? 'でも間に合う見込み' : 'では締切超過の恐れ'}）`
         )
       );
     }
@@ -1715,7 +1727,9 @@ function renderPredictorSection(
     confidenceBadge(pred.confidence),
     h('div', { class: 'zss-pred-note' }, [
       pred.montecarlo
-        ? `過去の日次消化を曜日別にサンプリングし ${pred.montecarlo.runs} 回シミュレーション（モンテカルロ）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`
+        ? pred.mcBasis === 'time'
+          ? `残り時間（教科別の教材の重さで換算）を過去の日別学習時間で曜日別にサンプリングし ${pred.montecarlo.runs} 回シミュレーション（時間ベースMC＝残りが重い教科でも偏らない）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`
+          : `過去の日次消化を曜日別にサンプリングし ${pred.montecarlo.runs} 回シミュレーション（モンテカルロ）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`
         : `直近の学習活動から暫定予測（数日で精度向上）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`,
     ]),
     nums,
