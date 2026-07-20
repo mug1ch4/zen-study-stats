@@ -275,21 +275,26 @@ async function renderRecentTab(
 ): Promise<void> {
   // モード共通であることを明示（トグルが「選択科目」でも推移は全学習の合計）
   pane.appendChild(h('div', { class: 'zss-mode-common' }, ['このタブは必修＋必修以外を合わせた全学習の推移です（モード共通）。']));
-  // --- 直近14日（data から即描画） ---
-  pane.appendChild(
-    section('日別の学習数', '2週平均を基準線に · 棒=学習あり／薄い印=0／破線=記録なし', [
-      wrapChart(renderDailyBars(data.daily_amount, data.average_amount, tip)),
-      dataTable(
-        'データを表で見る',
-        ['日付', '曜日', '学習数'],
-        data.daily_amount.map((d) => [
-          shortDate(d.date),
-          weekdayLabel(d.date),
-          d.amount === null ? '記録なし' : d.amount,
-        ])
-      ),
-    ])
-  );
+  // --- 日別（学習時間を既定・学習数へ切替） ---
+  // 「やった量」の実感は教材数だと教科の重さで歪む（実測 7/20: 特別活動中心の日は
+  // 学習数が前日比26%なのに時間は91%＝件数バーはサボりに見える）ため、時間を既定にする。
+  const amountContent = (): (HTMLElement | SVGElement)[] => [
+    wrapChart(renderDailyBars(data.daily_amount, data.average_amount, tip)),
+    dataTable(
+      'データを表で見る',
+      ['日付', '曜日', '学習数'],
+      data.daily_amount.map((d) => [
+        shortDate(d.date),
+        weekdayLabel(d.date),
+        d.amount === null ? '記録なし' : d.amount,
+      ])
+    ),
+  ];
+  const AMOUNT_NOTE = '2週平均を基準線に · 棒=学習あり／薄い印=0／破線=記録なし';
+  const dailyWrap = h('div', {}, []);
+  pane.appendChild(dailyWrap);
+  // 時間データが来るまでは従来の学習数セクション（同期・即描画）
+  dailyWrap.appendChild(section('日別の学習数', AMOUNT_NOTE, amountContent()));
   // --- 学習時間（実測∨推定・非同期） ---
   // 実測 = アクティブタイム（この端末・可視タブで操作中/動画再生中のみ加算）。
   // 推定 = 受験記録＋動画実尺＋所要時間実測から復元（計測開始前・他端末の日を埋める）。
@@ -305,19 +310,10 @@ async function renderRecentTab(
       isoDate(zenToday())
     );
   })();
-  const stWrap = h('div', {}, []);
-  pane.appendChild(stWrap);
   void (async () => {
     const { combined, estSet } = await timeDataPromise;
     const stKeys = Object.keys(combined).sort();
-    if (!stKeys.length) {
-      stWrap.appendChild(
-        section('学習時間', '実測（この端末・操作中/動画再生中のみ）＋受験記録からの推定', [
-          h('div', { class: 'zss-empty' }, ['ZEN Study を開いて学習するか、詳細ログの抽出を実行すると学習時間が表示されます。']),
-        ])
-      );
-      return;
-    }
+    if (!stKeys.length) return; // 時間データ無し → 学習数セクションのまま
     const stFirst = stKeys[0];
     const stDays = data.daily_amount.map((d) => ({
       date: d.date,
@@ -326,15 +322,43 @@ async function renderRecentTab(
     const stVals = stDays.map((d) => d.amount).filter((v): v is number => v !== null);
     const stAvg = stVals.length ? Math.round(stVals.reduce((a, b) => a + b, 0) / stVals.length) : 0;
     const todaySec = combined[isoDate(zenToday())] ?? 0;
-    stWrap.appendChild(
-      section(`学習時間 · 今日 ${durationStr(todaySec)}`, '実測（この端末・操作中/動画再生中のみ加算）。半透明の棒＝推定（受験記録＋動画実尺、無い日は学習数×較正値。計測開始前・他端末・当日ぶんを補完）', [
-        wrapChart(renderDailyBars(stDays, stAvg, tip, fmtMin, estSet)),
-        dataTable(
-          'データを表で見る',
-          ['日付', '曜日', '学習時間'],
-          stDays.map((d) => [shortDate(d.date), weekdayLabel(d.date), d.amount === null ? '記録なし' : `${fmtMin(d.amount)}${estSet.has(d.date) ? '（推定）' : ''}`])
-        ),
-      ])
+    const timeContent = (): (HTMLElement | SVGElement)[] => [
+      wrapChart(renderDailyBars(stDays, stAvg, tip, fmtMin, estSet)),
+      dataTable(
+        'データを表で見る',
+        ['日付', '曜日', '学習時間'],
+        stDays.map((d) => [shortDate(d.date), weekdayLabel(d.date), d.amount === null ? '記録なし' : `${fmtMin(d.amount)}${estSet.has(d.date) ? '（推定）' : ''}`])
+      ),
+    ];
+    const TIME_NOTE = '実測（この端末・操作中/動画再生中のみ加算）。半透明の棒＝推定（受験記録＋動画実尺・計測開始前や他端末ぶんの補完）';
+    // 学習時間を既定にしたトグル付きセクションへ置換（2セクションの縦積みを1つに統合）
+    let dmode: 'time' | 'amount' = 'time';
+    const titleEl = h('div', { class: 'zss-section-title' }, []);
+    const noteEl = h('div', { class: 'zss-tsub-note' }, []);
+    const bodyEl = h('div', {}, []);
+    const segBtns2: HTMLElement[] = [];
+    const modes2: ['time' | 'amount', string][] = [['time', '学習時間'], ['amount', '学習数']];
+    const applyDaily = (): void => {
+      segBtns2.forEach((x, i) => x.classList.toggle('on', modes2[i][0] === dmode));
+      titleEl.textContent = dmode === 'time' ? `学習時間 · 今日 ${durationStr(todaySec)}` : '日別の学習数';
+      noteEl.textContent = dmode === 'time' ? TIME_NOTE : AMOUNT_NOTE;
+      bodyEl.textContent = '';
+      for (const el of dmode === 'time' ? timeContent() : amountContent()) bodyEl.appendChild(el);
+    };
+    const seg2 = h('div', { class: 'zss-seg' }, []);
+    for (const [m, label] of modes2) {
+      const b = h('button', {}, [label]);
+      b.addEventListener('click', () => {
+        dmode = m;
+        applyDaily();
+      });
+      segBtns2.push(b);
+      seg2.appendChild(b);
+    }
+    applyDaily();
+    dailyWrap.textContent = '';
+    dailyWrap.appendChild(
+      h('div', { class: 'zss-section' }, [h('div', { class: 'zss-section-head' }, [titleEl, seg2]), noteEl, bodyEl])
     );
   })();
   // --- 長期（自前蓄積・非同期） ＋ 曜日リズム（直近2週） ---
@@ -370,11 +394,12 @@ async function renderRecentTab(
   const cache: Record<string, HTMLElement> = {};
   let curView = hasLong ? 'cal' : 'weekday';
   type Basis = 'amount' | 'time';
-  let basis: Basis = 'amount';
   const timeData = await timeDataPromise;
   const timeSeries = Object.keys(timeData.combined)
     .sort()
     .map((date) => ({ date, amount: Math.round((timeData.combined[date] ?? 0) / 60) }));
+  // 既定は学習時間（努力の実感は件数だと教科の重さで歪むため）。データが薄ければ学習数
+  let basis: Basis = timeSeries.length >= 3 ? 'time' : 'amount';
   const seriesOf = (b: Basis): { date: string; amount: number }[] => (b === 'time' ? timeSeries : series);
   const fmtOf = (b: Basis): ((v: number) => string) | undefined => (b === 'time' ? fmtMin : undefined);
   const hasData = (b: Basis): boolean => (b === 'time' ? timeSeries.length > 0 : hasLong);
@@ -1449,9 +1474,10 @@ function renderPredictorSection(
     const p85 = md(mc.p85);
     const p50 = md(mc.p50);
     if (pred.onTrack) {
+      // p50/p85を1行に集約（「このペースなら◯◯完了」の別行を廃止＝同一MCの言い換え重複を排除）
       verdict = h('div', { class: 'zss-pred-head ok' }, [
         `${p85} までに完了（85%）`,
-        h('span', { class: 'sub' }, [`　${md(pred.finalDeadline)}に間に合う確率 ${pct}%`]),
+        h('span', { class: 'sub' }, [`　中央 ${p50} · ${md(pred.finalDeadline)}に間に合う確率 ${pct}%`]),
       ]);
     } else if (pct >= 40) {
       verdict = h('div', { class: 'zss-pred-head warn' }, [
@@ -1475,11 +1501,23 @@ function renderPredictorSection(
     verdict = h('div', { class: 'zss-pred-head' }, ['ペース算出中（数日記録すると予測が出ます）']);
   }
 
-  const nums = h('div', { class: 'zss-kpis' }, [
-    kpiTile(`${pred.remaining}`, `残教材 / 全${pred.total}`),
-    kpiTile(pred.pOnTime !== null ? `${Math.round(pred.pOnTime * 100)}%` : '—', '間に合う確率'),
-    kpiTile(pred.currentPerWeek !== null ? `${Math.round(pred.currentPerWeek)}/週` : '—', '現在ペース'),
-  ]);
+  // KPI: 時間データがあれば時間ファースト（残り時間・時間ペース）＋教材は括弧で併記。
+  // 「やった量/残り量」の実感は教材数だと教科の重さで歪む（軽い教科の日だけ捗って見える）ため。
+  const tcK = opts.timeCheck;
+  const nums = h('div', { class: 'zss-kpis' }, tcK && tcK.remainSec > 0 && pred.remaining > 0
+    ? [
+        kpiTile(`≈${Math.round(tcK.remainSec / 3600)}h`, `残り時間（${pred.remaining}教材）`),
+        kpiTile(pred.pOnTime !== null ? `${Math.round(pred.pOnTime * 100)}%` : '—', '間に合う確率'),
+        kpiTile(
+          tcK.recentSecPerDay && tcK.recentSecPerDay > 60 ? `${durationStr(Math.round(tcK.recentSecPerDay))}/日` : pred.currentPerWeek !== null ? `${Math.round(pred.currentPerWeek)}/週` : '—',
+          tcK.recentSecPerDay && tcK.recentSecPerDay > 60 ? '現在ペース（学習時間）' : '現在ペース'
+        ),
+      ]
+    : [
+        kpiTile(`${pred.remaining}`, `残教材 / 全${pred.total}`),
+        kpiTile(pred.pOnTime !== null ? `${Math.round(pred.pOnTime * 100)}%` : '—', '間に合う確率'),
+        kpiTile(pred.currentPerWeek !== null ? `${Math.round(pred.currentPerWeek)}/週` : '—', '現在ペース'),
+      ]);
 
   // 手法別の見立て（併記）
   const methods = h(
@@ -1699,12 +1737,10 @@ function renderPredictorSection(
     downloadText(`zen-study-plan-${v}.ics`, 'text/calendar', buildPlanIcs({ remaining: pred.remaining, passed: pred.passed, target, today: today0 }));
   });
 
-  const targetBox = h('div', { class: 'zss-target-box' }, [
-    h('div', { class: 'zss-target-head' }, ['目標日から逆算']),
+  const targetRows = [
     h('div', { class: 'zss-target' }, [h('span', {}, ['完了させたい日:']), dateInput]),
     recOut,
-    h('div', { class: 'zss-dm-row', style: 'margin-top:6px' }, [icsBtn]),
-  ]);
+  ];
 
   // 一日の教材数から逆算（義務ペース以上のみ設定可能）。入力した1日ペースでの完了見込み日を出す。
   // 義務ペースは quest（今日の目標）と同じ questTargetOf を使用（単一情報源・端数差を排除）。
@@ -1738,28 +1774,29 @@ function renderPredictorSection(
   paceInput.addEventListener('input', onPace);
   paceInput.addEventListener('change', onPace);
   updatePace(); // 初期はテキストのみ更新（線は目標日プランナーの初期表示を優先）
-  const paceBox = h('div', { class: 'zss-target-box' }, [
-    h('div', { class: 'zss-target-head' }, ['一日の教材数から逆算']),
-    h('div', { class: 'zss-target' }, [
+  // 逆算プランナー: 「目標日→必要ペース」と「1日ペース→完了日」を1箱に統合（重複ボックスの削減）
+  const plannerBox = h('div', { class: 'zss-target-box' }, [
+    h('div', { class: 'zss-target-head' }, ['逆算プランナー']),
+    ...targetRows,
+    h('div', { class: 'zss-target', style: 'margin-top:8px' }, [
       h('span', {}, ['1日の教材数:']), paceInput,
       h('span', { class: 'zss-pace-min' }, [`義務 ${requiredPerDay} 教材/日 以上`]),
     ]),
     paceOut,
+    h('div', { class: 'zss-dm-row', style: 'margin-top:6px' }, [icsBtn]),
   ]);
 
   const analysisEl = renderAnalysis(pred);
   // 時間ベースの検算: 教材数ベースの予測は「残りの教科構成が過去より重い/軽い」と偏る
   // （軽い英語だけ消化してきた人は楽観に出る等）。時間換算はその影響を受けない独立チェック。
+  // 時間ベースの行: KPIが時間ファーストになったため、締切までの必要分/日の1行に絞る。
+  // ヘッドラインMCが教材ベース（時間データ不足）のときだけ、独立検算のETAも出す。
   let timeCheckEl: HTMLElement | null = null;
   const tc = opts.timeCheck;
   if (tc && tc.remainSec > 0 && pred.remaining > 0) {
     const rows: HTMLElement[] = [];
-    const hrs = Math.round(tc.remainSec / 3600);
     const reqMin = pred.daysLeft > 0 ? Math.ceil(tc.remainSec / pred.daysLeft / 60) : Infinity;
-    rows.push(
-      analysisLine('note', `残り ≈ ${hrs}時間（教科別の教材の重さで換算）${isFinite(reqMin) ? ` → 締切までは 1日 約${reqMin}分` : ''}${tc.recentSecPerDay && tc.recentSecPerDay > 60 ? `・直近の学習時間 平均 ${durationStr(Math.round(tc.recentSecPerDay))}/日` : ''}`)
-    );
-    // ヘッドラインMCが教材ベースのときだけ、時間ベースのETAを独立検算として出す（時間MC時は重複）
+    if (isFinite(reqMin)) rows.push(analysisLine('note', `締切までは 1日 約${reqMin}分（残り時間÷残り日数）`));
     if (pred.mcBasis !== 'time' && tc.recentSecPerDay && tc.recentSecPerDay > 60) {
       const etaDays = Math.ceil(tc.remainSec / tc.recentSecPerDay);
       const eta = new Date(zenToday().getTime() + etaDays * 86400000);
@@ -1767,11 +1804,11 @@ function renderPredictorSection(
       rows.push(
         analysisLine(
           ok ? 'good' : 'warn',
-          `直近の学習時間 平均なら ${md(eta)} ごろ完了（時間ベース${ok ? 'でも間に合う見込み' : 'では締切超過の恐れ'}）`
+          `時間ベースの検算: 直近の学習時間 平均なら ${md(eta)} ごろ完了（${ok ? '間に合う見込み' : '締切超過の恐れ'}）`
         )
       );
     }
-    timeCheckEl = h('div', { class: 'zss-analysis' }, rows);
+    if (rows.length) timeCheckEl = h('div', { class: 'zss-analysis' }, rows);
   }
   const secPerMatRem = tc && pred.remaining > 0 ? tc.remainSec / pred.remaining : null;
   const quest = renderDailyQuest(pred, todayAmount, secPerMatRem);
@@ -1795,20 +1832,23 @@ function renderPredictorSection(
     ]),
     verdict,
     confidenceBadge(pred.confidence),
-    h('div', { class: 'zss-pred-note' }, [
-      pred.montecarlo
-        ? pred.mcBasis === 'time'
-          ? `残り時間（教科別の教材の重さで換算）を過去の日別学習時間で曜日別にサンプリングし ${pred.montecarlo.runs} 回シミュレーション（時間ベースMC＝残りが重い教科でも偏らない）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`
-          : `過去の日次消化を曜日別にサンプリングし ${pred.montecarlo.runs} 回シミュレーション（モンテカルロ）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`
-        : `直近の学習活動から暫定予測（数日で精度向上）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`,
-    ]),
     nums,
     ...(analysisEl ? [analysisEl] : []),
     ...(timeCheckEl ? [timeCheckEl] : []),
-    targetBox,
-    paceBox,
-    ...(opts.calNote ? [h('div', { class: 'zss-pred-caveat' }, [opts.calNote])] : []),
-    h('div', { class: 'zss-pred-caveat' }, [opts.electivesNote]),
+    plannerBox,
+    // 説明・注記は折りたたみに集約（常時表示は判定・KPI・分析行だけ＝情報過多の抑制）
+    h('details', { class: 'zss-fold' }, [
+      h('summary', {}, ['この予測の仕組み・注記']),
+      h('div', { class: 'zss-pred-note' }, [
+        pred.montecarlo
+          ? pred.mcBasis === 'time'
+            ? `残り時間（教科別の教材の重さで換算）を過去の日別学習時間で曜日別にサンプリングし ${pred.montecarlo.runs} 回シミュレーション（時間ベースMC＝残りが重い教科でも偏らない）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`
+            : `過去の日次消化を曜日別にサンプリングし ${pred.montecarlo.runs} 回シミュレーション（モンテカルロ）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`
+          : `直近の学習活動から暫定予測（数日で精度向上）。残レポート ${pred.remainingReports} 件は教材を進めた後にまとめて提出できます。`,
+      ]),
+      ...(opts.calNote ? [h('div', { class: 'zss-pred-caveat' }, [opts.calNote])] : []),
+      h('div', { class: 'zss-pred-caveat' }, [opts.electivesNote]),
+    ]),
     ...(pred.montecarlo
       ? [
           dataTable('予測データを表で見る', ['指標', '値'], [
@@ -1845,17 +1885,12 @@ function recMsg(kind: 'good' | 'warn' | 'note', text: string): HTMLElement {
   return h('div', { class: 'zss-rec-msg ' + kind }, [text]);
 }
 
-/** 現在ペースからの分析（完了見込み vs 締切・明日の目安・ペース傾向）。 */
+/** 現在ペースからの分析（明日の目安・ペース傾向）。
+ *  完了見込み(p50)は判定行に集約済み＝ここでは重複させない（情報過多の抑制）。 */
 function renderAnalysis(pred: Prediction): HTMLElement | null {
   if (pred.remaining <= 0) return null;
   const a = pred.analysis;
   const rows: HTMLElement[] = [];
-  if (pred.projectedFinish && pred.daysVsDeadline !== null) {
-    const dv = Math.round(pred.daysVsDeadline);
-    if (dv <= -1) rows.push(analysisLine('good', `このペースなら ${md(pred.projectedFinish)} 頃に完了見込み（締切より ${-dv}日早い）`));
-    else if (dv >= 1) rows.push(analysisLine('warn', `このペースだと完了は ${md(pred.projectedFinish)} 頃（締切を ${dv}日超過）`));
-    else rows.push(analysisLine('note', `完了見込みは締切とほぼ同時（${md(pred.projectedFinish)}）`));
-  }
   // 明日の目安: 締切オーバーの見込み(!onTrack)なら「最低必要分(逆算)」、順調なら「投影(やりそうな量)」。
   if (!pred.onTrack && a.tomorrowRequired !== null) {
     if (a.tomorrowRequired >= 1) {

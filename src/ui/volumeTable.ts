@@ -6,6 +6,13 @@ import { renderDonut } from '../charts/donut';
 import { renderBreakdownDonut } from '../charts/donutBreakdown';
 
 import type { WorkTimes } from '../history';
+import { avgWorkMinutes } from '../studyTimeEst';
+
+/** 残りの時間換算（動画=実尺・テスト/レポート=所要実測 or 既定値）。 */
+function remainSecOf(c: CourseVol, wt?: WorkTimes): number {
+  const w = wt ?? {};
+  return c.remaining.movieSeconds + c.remaining.testCount * avgWorkMinutes(w, c.id, 'test') * 60 + c.remaining.reportCount * avgWorkMinutes(w, c.id, 'report') * 60;
+}
 
 export interface SubjectsOpts {
   includeSupp?: boolean; // 視聴任意の補助動画を残り学習量に含める
@@ -26,7 +33,9 @@ export function renderSubjects(courses: CourseVol[], wt?: WorkTimes, opts?: Subj
     h('div', { class: 'zss-vol-summary zss-vol-summary-flex' }, [
       renderDonut(passedMat, totalMat, { size: 96, label: '教材' }),
       h('div', { class: 'zss-vol-sum-body' }, [
-        h('div', { class: 'zss-vol-sum-main' }, [`全${courses.length}コース · 教材 ${passedMat}/${totalMat}（${pct}%）`]),
+        h('div', { class: 'zss-vol-sum-main' }, [
+          `全${courses.length}コース · 教材 ${passedMat}/${totalMat}（${pct}%）· 残り ≈ ${durationStr(courses.reduce((a, c) => a + remainSecOf(c, wt), 0))}`,
+        ]),
         h('div', { class: 'zss-vol-chips' }, [
           chip('動画', `残${durationStr(remM.movieSeconds)} / ${durationStr(totM.movieSeconds)}`),
           chip('確認テスト', `残${remM.testCount} / ${totM.testCount}`),
@@ -58,7 +67,7 @@ export function renderSubjects(courses: CourseVol[], wt?: WorkTimes, opts?: Subj
 
   // 残の多い順
   const sorted = [...courses].sort((a, b) => remMat(b) - remMat(a));
-  for (const c of sorted) wrap.appendChild(courseRow(c));
+  for (const c of sorted) wrap.appendChild(courseRow(c, wt));
 
   // 全列テーブル（a11y・精読用）
   wrap.appendChild(
@@ -78,8 +87,9 @@ export function renderSubjects(courses: CourseVol[], wt?: WorkTimes, opts?: Subj
   return wrap;
 }
 
-function courseRow(c: CourseVol): HTMLElement {
+function courseRow(c: CourseVol, wt?: WorkTimes): HTMLElement {
   const rem = remMat(c);
+  const remSec = remainSecOf(c, wt);
   const cpct = c.totalMaterials ? Math.round((c.passedMaterials / c.totalMaterials) * 100) : 0;
   const sub = h('div', { class: 'zss-vol-sub' }, []);
   let expanded = false;
@@ -90,7 +100,7 @@ function courseRow(c: CourseVol): HTMLElement {
         c.title,
         ...(c.passedMaterials === 0 && c.totalMaterials > 0 ? [h('span', { class: 'zss-untouched' }, ['未着手'])] : []),
       ]),
-      h('span', { class: 'zss-vol-pct' }, [`残${rem} / ${c.totalMaterials}`]),
+      h('span', { class: 'zss-vol-pct' }, [rem > 0 ? `残${rem} / ${c.totalMaterials} ≈ ${durationStr(remSec)}` : `残${rem} / ${c.totalMaterials}`]),
     ]),
     bar(cpct),
     h('div', { class: 'zss-vol-metrics' }, [
