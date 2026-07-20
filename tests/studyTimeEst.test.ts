@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { avgWorkMinutes, estimateDailyStudySeconds, estimateHourlyStudySeconds, calibrateSecPerLA, secPerMaterialByCourse, estimateDailyByCourseDelta } from '../src/studyTimeEst';
+import { avgWorkMinutes, estimateDailyStudySeconds, estimateHourlyStudySeconds, calibrateSecPerLA, secPerMaterialByCourse, estimateDailyByCourseDelta, buildRemainingHoursSeries } from '../src/studyTimeEst';
 import type { ResultEntry } from '../src/resultLog';
 import type { MovieEvent } from '../src/movieInterp';
 import type { WorkTimes } from '../src/history';
@@ -95,6 +95,29 @@ describe('secPerMaterialByCourse / estimateDailyByCourseDelta', () => {
     const conv = secPerMaterialByCourse([{ id: 1, totalMaterials: 10, movieSeconds: 3600, testCount: 0, reportCount: 0 }], {});
     const est = estimateDailyByCourseDelta({ '2026-07-18': { '9': 0 }, '2026-07-19': { '9': 2 } }, conv);
     expect(est['2026-07-19']).toBeCloseTo(2 * 360, 5);
+  });
+});
+
+describe('buildRemainingHoursSeries', () => {
+  it('cph日=教科構成で正確・以前=イベント積み戻し・全体残へ正規化', () => {
+    const conv = { byCourse: new Map([[1, 600], [2, 100]]), global: 350 };
+    const courses = [
+      { id: 1, total: 10, passed: 6 }, // 重い教科（600s）
+      { id: 2, total: 10, passed: 8 }, // 軽い教科（100s）
+    ];
+    const cph = [{ date: '2026-07-15', byCourse: { 1: 5, 2: 4 } as Record<number, number> }];
+    // 7/14以前: 教科2のイベントが7/15に2件 → 7/14時点の教科2 passed = 4-2 = 2
+    const events = [{ at: at(10), courseId: 2 }, { at: at(11), courseId: 2 }];
+    const remainingMat = new Map([
+      ['2026-07-14', 14], // 全体残（正規化目標）: known(5+8)=13 → ×14/13
+      ['2026-07-15', 11],
+    ]);
+    const out = buildRemainingHoursSeries({ dates: ['2026-07-14', '2026-07-15'], remainingMat, courses, cph, events, conv });
+    // 7/15: 教科1残5×600 + 教科2残6×100 = 3600 → 全体残11 vs known11 → 正規化1倍
+    expect(out.get('2026-07-15')).toBeCloseTo(5 * 600 + 6 * 100, 5);
+    // 7/14: 教科1残5×600(スナップ無→7/15から積み戻し・イベント無)…教科1はfirst=7/15(5) events0 → passed5
+    //        教科2 passed = 4-2=2 → 残8×100。known=13 → ×14/13
+    expect(out.get('2026-07-14')).toBeCloseTo((5 * 600 + 8 * 100) * (14 / 13), 5);
   });
 });
 

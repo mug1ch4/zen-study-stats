@@ -133,6 +133,68 @@ export function secPerMaterialByCourse(vols: CourseVolLite[], wt: WorkTimes): { 
   return { byCourse, global: matSum > 0 ? secSum / matSum : null };
 }
 
+/** 日別の「残り時間（秒）」系列（バーンダウンの時間表示用）。
+ *  残り教材数の系列は既にある（正準系列）が、残りの中身は日々変わる（軽い教科から先に
+ *  消化すると残りは重くなる）ため、教科別の残り×秒/教材で構成を考慮して換算する。
+ *  - cph にある日: その日の教科別 passed から正確に算出
+ *  - それ以前: 最初の既知点から教科別イベント（受験＋補間動画）を積み戻して復元
+ *  - アンカーに乗らない消化（LA按分ぶん）: 全体残り教材数(remainingMat)に一致するよう
+ *    比例スケール（日平均の構成で帰属） */
+export function buildRemainingHoursSeries(args: {
+  dates: string[]; // 昇順・対象日
+  remainingMat: Map<string, number>; // 日→全体の残り教材（正準系列由来・正規化目標）
+  courses: { id: number; total: number; passed: number }[];
+  cph: { date: string; byCourse: Record<number, number> }[];
+  events: { at: number; courseId: number }[];
+  conv: { byCourse: Map<number, number>; global: number | null };
+}): Map<string, number> {
+  const out = new Map<string, number>();
+  if (args.conv.global === null) return out;
+  const spm = (cid: number): number => args.conv.byCourse.get(cid) ?? args.conv.global!;
+  const zdayOf = (at: number): string => zenTodayISO(at * 1000);
+  // 教科別イベント日次カウント
+  const evByCourse = new Map<number, Map<string, number>>();
+  for (const e of args.events) {
+    let m = evByCourse.get(e.courseId);
+    if (!m) evByCourse.set(e.courseId, (m = new Map()));
+    const dd = zdayOf(e.at);
+    m.set(dd, (m.get(dd) ?? 0) + 1);
+  }
+  const cphSorted = [...args.cph].sort((a, b) => (a.date < b.date ? -1 : 1));
+  for (const d of args.dates) {
+    let sec = 0;
+    let knownMat = 0;
+    for (const c of args.courses) {
+      // その日以前の最新スナップ（教科値あり）
+      let passedAt: number | null = null;
+      for (let i = cphSorted.length - 1; i >= 0; i--) {
+        if (cphSorted[i].date <= d && cphSorted[i].byCourse[c.id] !== undefined) {
+          passedAt = cphSorted[i].byCourse[c.id];
+          break;
+        }
+      }
+      if (passedAt === null) {
+        // 既知点（最初のスナップ or 現在値）からイベントを積み戻す
+        const first = cphSorted.find((r) => r.byCourse[c.id] !== undefined);
+        const baseDate = first?.date ?? null; // null = 現在値(今日)基準
+        const basePassed = first ? first.byCourse[c.id] : c.passed;
+        let back = 0;
+        const evm = evByCourse.get(c.id);
+        if (evm) for (const [dd, n] of evm) if (dd > d && (baseDate === null || dd <= baseDate)) back += n;
+        passedAt = Math.max(0, basePassed - back);
+      }
+      const rem = Math.max(0, c.total - passedAt);
+      sec += rem * spm(c.id);
+      knownMat += rem;
+    }
+    // 全体残り教材数へ正規化（アンカー外の消化を日平均の構成で帰属）
+    const target = args.remainingMat.get(d);
+    if (target !== undefined && knownMat > 0) sec *= target / knownMat;
+    out.set(d, sec);
+  }
+  return out;
+}
+
 /** 教科別passed履歴の隣接日差分 × 教科別秒/教材 → 日別推定秒。
  *  隣接しない日の差分は日割り不明なのでスキップ（誤帰属を作らない）。 */
 export function estimateDailyByCourseDelta(

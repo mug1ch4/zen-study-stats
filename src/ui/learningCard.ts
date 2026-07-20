@@ -2,6 +2,7 @@ import type { LearningAmounts } from '../api';
 import { computeKpis, computeWeekdayStats } from '../derive';
 import { weekdayLabel, shortDate, zenToday, nowMs, durationStr } from '../format';
 import { computeStudyTimeData, recentStudySecPerDay, type StudyTimeData } from '../studyTimeData';
+import { buildRemainingHoursSeries } from '../studyTimeEst';
 import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
@@ -782,6 +783,36 @@ async function renderPredictTab(
     const timeCheck: { remainSec: number; recentSecPerDay: number | null } | null =
       timeInput && timeData ? { remainSec: timeInput.remainSec, recentSecPerDay: recentStudySecPerDay(timeData.combined, todayIso2) } : null;
 
+    // バーンダウンの時間表示（既定）: 実績カーブを教科構成を考慮して「残り時間」へ変換。
+    // 残りの中身は日々重くなる（軽い教科から消化）ため、教材数からの一律換算では過去が歪む。
+    let timeView: { actual: { date: string; remaining: number }[]; retro: { date: string; remaining: number }[]; axisMaxSec: number; secPerMatRem: number } | null = null;
+    if (timeInput && timeData && timeData.conv.global !== null && pred.remaining > 0) {
+      try {
+        const remMap = new Map(series2.points.map((p) => [p.date, Math.max(0, total - p.cum)]));
+        const evC = [
+          ...reqLog.map((e) => ({ at: (e.firstAt ?? e.latestAt)!, courseId: e.courseId })).filter((e) => e.at),
+          ...reqMov.map((m) => ({ at: m.at, courseId: m.courseId })),
+        ];
+        const secMap = buildRemainingHoursSeries({
+          dates: series2.points.map((p) => p.date),
+          remainingMat: remMap,
+          courses: courses.map((c) => ({ id: c.id, total: c.total, passed: c.passed })),
+          cph: subjCoursePassedHist,
+          events: evC,
+          conv: timeData.conv,
+        });
+        const toH = (dd: string, matRem: number): number => (secMap.get(dd) ?? matRem * (timeInput!.remainSec / pred.remaining)) / 3600;
+        timeView = {
+          actual: actualCurve.map((p) => ({ date: p.date, remaining: toH(p.date, p.remaining) })),
+          retro: overallRetro.map((p) => ({ date: p.date, remaining: toH(p.date, p.remaining) })),
+          axisMaxSec: courses.reduce((a, c) => a + c.total * (timeData!.conv.byCourse.get(c.id) ?? timeData!.conv.global!), 0),
+          secPerMatRem: timeInput.remainSec / pred.remaining,
+        };
+      } catch {
+        /* 時間表示が作れなければ教材表示のみ */
+      }
+    }
+
     pane.textContent = '';
     pane.appendChild(
       renderPredictorSection(pred, actualCurve, tip, todayDone, {
@@ -793,6 +824,7 @@ async function renderPredictTab(
         overallRetro,
         subjectBurndown: { courses, hist: subjCoursePassedHist, resultLog: subjResultLog, movieEvents: subjMovieEvents },
         timeCheck,
+        timeView,
       })
     );
 
@@ -1403,6 +1435,8 @@ function renderPredictorSection(
     subjectBurndown?: { courses: CourseMaterial[]; hist: CoursePassedHistory; resultLog: ResultEntry[]; movieEvents: MovieEvent[] } | null;
     /** 時間ベースの検算（教科別の教材の重さで換算した残り時間・直近の学習時間ペース） */
     timeCheck?: { remainSec: number; recentSecPerDay: number | null } | null;
+    /** バーンダウンの時間表示（既定単位）: 教科構成を考慮した残り時間カーブ */
+    timeView?: { actual: { date: string; remaining: number }[]; retro: { date: string; remaining: number }[]; axisMaxSec: number; secPerMatRem: number } | null;
   }
 ): HTMLElement {
   // 見出しの判定（モンテカルロの確率・パーセンタイルを主に）
@@ -1489,9 +1523,28 @@ function renderPredictorSection(
     if (t.getTime() >= pred.finalDeadline.getTime() - 12 * 3600 * 1000) return null;
     return t;
   };
+  // 単位トグル: 残り時間（既定・教科構成を考慮）⇄ 残り教材。時間データが無ければ教材のみ。
+  const tv = opts.timeView ?? null;
+  let bdUnit: 'time' | 'mat' = tv ? 'time' : 'mat';
   const drawOverall = (target: Date | null): void => {
     chartHost.textContent = '';
-    chartHost.appendChild(renderBurndown(pred, actual, tip, target, opts.overallRetro));
+    const useTime = bdUnit === 'time' && !!tv;
+    chartHost.appendChild(
+      renderBurndown(
+        pred,
+        useTime ? tv!.actual : actual,
+        tip,
+        target,
+        useTime ? tv!.retro : opts.overallRetro,
+        useTime
+          ? {
+              toVal: (m) => (m * tv!.secPerMatRem) / 3600,
+              fmt: (v) => durationStr(Math.max(0, Math.round(v * 3600))),
+              axisMax: tv!.axisMaxSec / 3600,
+            }
+          : undefined
+      )
+    );
     legendHost.textContent = '';
     const items: HTMLElement[] = [
       legendLine('var(--muted)', '必要ライン'),
@@ -1555,6 +1608,22 @@ function renderPredictorSection(
     if (bdSelId === 0 || !bd) drawOverall(target);
     else drawSubject();
   };
+  // 単位トグルUI（全体ビューかつ時間データがあるときだけ表示）
+  const unitSeg = h('div', { class: 'zss-seg' }, [] as HTMLElement[]);
+  const unitBtns: HTMLElement[] = [];
+  if (tv) {
+    const units: ['time' | 'mat', string][] = [['time', '残り時間'], ['mat', '残り教材']];
+    for (const [u, label] of units) {
+      const b = h('button', u === bdUnit ? { class: 'on' } : {}, [label]);
+      b.addEventListener('click', () => {
+        bdUnit = u;
+        unitBtns.forEach((x, i) => x.classList.toggle('on', units[i][0] === bdUnit));
+        drawChart(bdLastTarget);
+      });
+      unitBtns.push(b);
+      unitSeg.appendChild(b);
+    }
+  }
   const bdSel = h('select', { class: 'zss-bd-select', 'aria-label': '表示する教科' }) as HTMLSelectElement;
   bdSel.appendChild(h('option', { value: '0' }, ['全体（既定）']) as HTMLOptionElement);
   if (bd) {
@@ -1563,6 +1632,7 @@ function renderPredictorSection(
     }
     bdSel.addEventListener('change', () => {
       bdSelId = +bdSel.value;
+      unitSeg.style.display = bdSelId === 0 ? '' : 'none'; // 教科別は教材単位のみ
       drawChart(bdLastTarget);
     });
   }
@@ -1709,7 +1779,7 @@ function renderPredictorSection(
   const chartBlock = [
     h('div', { class: 'zss-section-head' }, [
       h('div', { class: 'zss-section-title' }, ['実績・完了見込み']),
-      h('div', { class: 'zss-bd-ctrl' }, [bdSel, h('span', { class: 'zss-section-note' }, [`締切 ${md(pred.finalDeadline)}`])]),
+      h('div', { class: 'zss-bd-ctrl' }, [...(tv ? [unitSeg] : []), bdSel, h('span', { class: 'zss-section-note' }, [`締切 ${md(pred.finalDeadline)}`])]),
     ]),
     chartHost,
     legendHost,

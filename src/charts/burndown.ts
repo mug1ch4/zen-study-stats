@@ -155,11 +155,21 @@ export function renderCourseBurndown(c: CourseBurn, tip: Tooltip): SVGElement {
   return svg;
 }
 
+/** 表示単位（時間モード）。actual/retro は呼び出し側で表示単位に変換済みで渡す。
+ *  予測由来の値（remaining・帯・投影カーブ＝教材数）は toVal で表示単位へ変換する。 */
+export interface BurnUnit {
+  toVal: (materials: number) => number; // 教材数 → 表示値（例: ×残り平均秒/3600 = 時間）
+  fmt: (v: number) => string; // 値の表記（例: "残 12h30m"）
+  axisMax: number; // y軸上端（例: 全教材の総時間）
+}
+
 /** 教材消化バーンダウン: 日次実績(再構成)＋曜日/祝日考慮の予測カーブ＋必要ライン＋（任意）目標日ライン。
  *  retroActual: 抽出ログ（受験アンカー・必修のみ）からの後方外挿。materialHistory が薄い過去を点線で補う。 */
-export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, targetDate?: Date | null, retroActual?: Pt[]): SVGElement {
-  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': '教材消化バーンダウン' });
-  const total = Math.max(1, p.total);
+export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, targetDate?: Date | null, retroActual?: Pt[], unit?: BurnUnit): SVGElement {
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': unit ? '残り時間バーンダウン' : '教材消化バーンダウン' });
+  const total = Math.max(1, unit ? unit.axisMax : p.total);
+  const val = (m: number): number => (unit ? unit.toVal(m) : m);
+  const fmtVal = (v: number): string => (unit ? `残 ${unit.fmt(v)}` : `残 ${Math.round(v)} 教材`);
   // x範囲: 実績（直接観測＋遡及推定）の最古 〜 締切。
   // 基点は「学習上の今日」(5:00 AM JST境界)。予測(モンテカルロ)の today と一致させ、帯のズレを防ぐ。
   const nowAnchor = zenToday().getTime();
@@ -175,7 +185,7 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, target
   for (const v of [0, total]) {
     const yy = y(v);
     svg.appendChild(s('line', { x1: L, y1: yy, x2: L + PLOT_W, y2: yy, stroke: 'var(--border)', 'stroke-width': 1 }));
-    svg.appendChild(s('text', { x: L - 5, y: yy + 3, 'text-anchor': 'end', 'font-size': 9, fill: 'var(--faint)' }, [String(v)]));
+    svg.appendChild(s('text', { x: L - 5, y: yy + 3, 'text-anchor': 'end', 'font-size': 9, fill: 'var(--faint)' }, [v === 0 ? '0' : unit ? unit.fmt(v) : String(v)]));
   }
 
   // 週末/祝日の縦帯（薄く）
@@ -239,7 +249,7 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, target
 
   // 必要ライン（今→締切で0へ・直線）
   svg.appendChild(s('line', {
-    x1: x(nowT), y1: y(p.remaining), x2: dx, y2: y(0),
+    x1: x(nowT), y1: y(val(p.remaining)), x2: dx, y2: y(0),
     stroke: 'var(--muted)', 'stroke-width': 1.5, 'stroke-dasharray': '4 4',
     class: 'zss-afade', style: 'animation-delay:250ms',
   }));
@@ -249,7 +259,7 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, target
   if (targetDate && targetDate.getTime() > nowT && targetDate.getTime() < t1 && p.remaining > 0) {
     const tx = x(targetDate.getTime());
     svg.appendChild(s('line', {
-      x1: x(nowT), y1: y(p.remaining), x2: tx, y2: y(0),
+      x1: x(nowT), y1: y(val(p.remaining)), x2: tx, y2: y(0),
       stroke: TARGET_COL, 'stroke-width': 2, 'stroke-linecap': 'round',
       pathLength: 1, class: 'zss-adraw', style: 'animation-delay:450ms',
     }));
@@ -271,11 +281,11 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, target
     }
     const band = raw.slice(0, end + 1);
     const bx = (d: number) => x(nowMs + d * DAY);
-    const upper = band.map((b) => `${bx(b.dayOffset).toFixed(1)},${y(b.p85).toFixed(1)}`);
-    const lower = band.map((b) => `${bx(b.dayOffset).toFixed(1)},${y(b.p15).toFixed(1)}`).reverse();
+    const upper = band.map((b) => `${bx(b.dayOffset).toFixed(1)},${y(val(b.p85)).toFixed(1)}`);
+    const lower = band.map((b) => `${bx(b.dayOffset).toFixed(1)},${y(val(b.p15)).toFixed(1)}`).reverse();
     // 半透明の帯（P15〜85）。フェードは最終不透明度0.15で止める（--fo）。中央値線はこの上に重ねる。
     svg.appendChild(s('polygon', { points: [...upper, ...lower].join(' '), fill: col, opacity: 0.15, stroke: 'none', class: 'zss-afade', style: 'animation-delay:150ms;--fo:0.15' }));
-    const median = band.map((b) => `${bx(b.dayOffset).toFixed(1)},${y(b.p50).toFixed(1)}`).join(' ');
+    const median = band.map((b) => `${bx(b.dayOffset).toFixed(1)},${y(val(b.p50)).toFixed(1)}`).join(' ');
     svg.appendChild(s('polyline', { points: median, fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));
 
     // 完了見込み区間（P15〜P85）を横軸に赤線で明示
@@ -290,7 +300,7 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, target
     svg.appendChild(s('text', { x: (x15 + x85) / 2, y: BASE_Y - 6, 'text-anchor': 'middle', 'font-size': 9, fill: RED, 'font-weight': 700, class: 'zss-afade', style: 'animation-delay:1000ms' }, ['完了見込み']));
   } else if (p.projectionCurve.length > 1) {
     // フォールバック: 曜日/祝日カーブ
-    const pts = p.projectionCurve.map((c) => `${x(parseDate(c.date).getTime()).toFixed(1)},${y(c.remaining).toFixed(1)}`).join(' ');
+    const pts = p.projectionCurve.map((c) => `${x(parseDate(c.date).getTime()).toFixed(1)},${y(val(c.remaining)).toFixed(1)}`).join(' ');
     svg.appendChild(s('polyline', { points: pts, fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1, class: 'zss-adraw' }));
   }
 
@@ -313,7 +323,7 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, target
         onmousemove: (e: Event) => {
           const me = e as MouseEvent;
           const d = parseDate(c.date);
-          tip.show(me.clientX, me.clientY, `<b>${d.getMonth() + 1}/${d.getDate()}</b> 残 ${Math.round(c.remaining)} 教材`);
+          tip.show(me.clientX, me.clientY, `<b>${d.getMonth() + 1}/${d.getDate()}</b> ${fmtVal(c.remaining)}`);
         },
         onmouseleave: () => tip.hide(),
       }));
@@ -321,7 +331,7 @@ export function renderBurndown(p: Prediction, actual: Pt[], tip: Tooltip, target
   }
   // 現在点（バーンダウンの起点。線が描かれた後にポップ）
   svg.appendChild(s('circle', {
-    cx: x(nowT), cy: y(p.remaining), r: 3.5, fill: 'var(--primary)', stroke: 'var(--surface)', 'stroke-width': 1.5,
+    cx: x(nowT), cy: y(val(p.remaining)), r: 3.5, fill: 'var(--primary)', stroke: 'var(--surface)', 'stroke-width': 1.5,
     class: 'zss-acell', style: 'animation-delay:900ms',
   }));
 
