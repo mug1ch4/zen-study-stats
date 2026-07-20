@@ -1,10 +1,7 @@
 import type { LearningAmounts } from '../api';
 import { computeKpis, computeWeekdayStats } from '../derive';
 import { weekdayLabel, shortDate, zenToday, nowMs, durationStr } from '../format';
-import { getStudyTime, getStudyTimeHours } from '../studyTime';
-import { estimateDailyStudySeconds, estimateHourlyStudySeconds, calibrateSecPerLA, totalRetroSeconds, secPerMaterialByCourse, estimateDailyByCourseDelta } from '../studyTimeEst';
-import { getCachedCourseVolumes } from '../courseStats';
-import type { WorkTimes } from '../history';
+import { computeStudyTimeData, recentStudySecPerDay, type StudyTimeData } from '../studyTimeData';
 import { h } from '../dom';
 import { Tooltip } from './tooltip';
 import { renderDailyBars } from '../charts/dailyBars';
@@ -298,53 +295,14 @@ async function renderRecentTab(
   // 【二重計上防止】実測はテスト/動画の時間を既に含むため加算せず、日ごとに max(実測, 推定)。
   const fmtMin = (m: number): string => durationStr(m * 60);
   const timeDataPromise = (async () => {
-    const [st, rlogT, skelsT, wtT, hoursMeasured, seriesLa] = await Promise.all([
-      getStudyTime().catch(() => ({}) as Record<string, number>),
-      getResultLog().catch(() => [] as ResultEntry[]),
-      getChapterSkels().catch(() => ({})),
-      getWorkTimes().catch(() => ({}) as WorkTimes),
-      getStudyTimeHours().catch(() => new Array(24).fill(0) as number[]),
-      getSeriesOnce().catch(() => [] as { date: string; amount: number }[]),
-    ]);
-    const [cphT, volsT] = await Promise.all([
-      getCoursePassedHistory().catch(() => ({}) as CoursePassedHistory),
-      getCachedCourseVolumes().catch(() => []),
-    ]);
-    const movT = interpolateMovieEvents(skelsT, rlogT);
-    const estDaily = estimateDailyStudySeconds(rlogT, movT, wtT);
-    // 第3層: 学習量×較正値。受験記録の推定は詳細ログの抽出時点で止まる（今日・抽出後の日が
-    // 抜ける）ため、当日も更新される学習量から換算して埋める。
-    //  a) 教科別: coursePassedHist の隣接日差分 × 教科別 秒/教材（教材の重さの教科差を反映）
-    //  b) 全体: LA × 秒/学習（較正は 実測日 Σ実測/ΣLA を優先、無ければ遡及総量/ΣLA）
+    const seriesLa = await getSeriesOnce().catch(() => [] as { date: string; amount: number }[]);
     const laMap = new Map<string, number>();
     for (const p of seriesLa) laMap.set(p.date, p.amount);
     for (const d of data.daily_amount) if (d.amount != null) laMap.set(d.date, d.amount);
-    const laArr = [...laMap.entries()].map(([date, amount]) => ({ date, amount }));
-    const todayIsoT = isoDate(zenToday());
-    const secPerLA = calibrateSecPerLA(laArr, st, estDaily, totalRetroSeconds(skelsT, rlogT, wtT), todayIsoT);
-    const conv = secPerMaterialByCourse(
-      volsT.map((v) => ({ id: v.id, totalMaterials: v.totalMaterials, movieSeconds: v.total.movieSeconds, testCount: v.total.testCount, reportCount: v.total.reportCount })),
-      wtT
+    return computeStudyTimeData(
+      [...laMap.entries()].map(([date, amount]) => ({ date, amount })),
+      isoDate(zenToday())
     );
-    const cphMap: Record<string, Record<string, number>> = {};
-    for (const p of cphT) cphMap[p.date] = p.byCourse as unknown as Record<string, number>;
-    const estCourse = estimateDailyByCourseDelta(cphMap, conv);
-    const combined: Record<string, number> = {};
-    const estSet = new Set<string>();
-    const allDays = new Set([...Object.keys(st), ...Object.keys(estDaily), ...Object.keys(estCourse), ...(secPerLA ? laMap.keys() : [])]);
-    for (const d of allDays) {
-      const m = st[d] ?? 0;
-      const e = estDaily[d] ?? 0;
-      const ec = estCourse[d] ?? 0;
-      const f = secPerLA ? (laMap.get(d) ?? 0) * secPerLA : 0;
-      // 学習量ベースの2推定は逆方向に偏る: 教科別（平均×件数）は短い教材を速攻した日に過大、
-      // LA×較正値は当日のLA集計ラグで過小。両方あるときは min で相殺（実測20:10 検証で
-      // 教科別457分/LA291分/実際約300分）。片方しか無ければそれを使う。
-      const eLearn = ec > 0 && f > 0 ? Math.min(ec, f) : Math.max(ec, f);
-      combined[d] = Math.max(m, e, eLearn);
-      if (combined[d] > m) estSet.add(d);
-    }
-    return { combined, estSet, hoursMeasured, hoursEst: estimateHourlyStudySeconds(rlogT, movT, wtT) };
   })();
   const stWrap = h('div', {}, []);
   pane.appendChild(stWrap);
@@ -800,6 +758,19 @@ async function renderPredictTab(
         ? `予測の的中率: これまでの予測のうち実績が P15〜85 帯に収まった割合 ${Math.round(cal.coverage * 100)}%（${cal.n}件で検証・理想は70%前後）。傾向: ${cal.bias === 'optimistic' ? 'やや楽観寄り（実際は予測より遅れがち）' : cal.bias === 'pessimistic' ? 'やや悲観寄り（実際は予測より速い）' : 'バランス良好'}。`
         : `予測の的中率: 検証データを蓄積中（予測と後日の実績の突き合わせ ${cal.n}/5件〜で表示）。`;
 
+    // 時間ベースの検算: 残り教材を教科別の重さで時間換算し、学習時間ペースで独立に見積もる
+    // （教材数ベースは残りの構成が過去より重いと楽観に寄るため）。データ不足なら黙って省略。
+    let timeCheck: { remainSec: number; recentSecPerDay: number | null } | null = null;
+    try {
+      const td: StudyTimeData = await computeStudyTimeData(merged, isoDate(zenToday()));
+      if (td.conv.global !== null) {
+        const remainSec = courses.reduce((a, c) => a + Math.max(0, c.total - c.passed) * (td.conv.byCourse.get(c.id) ?? td.conv.global!), 0);
+        timeCheck = { remainSec, recentSecPerDay: recentStudySecPerDay(td.combined, isoDate(zenToday())) };
+      }
+    } catch {
+      /* 検算は補助情報。失敗しても本流を妨げない */
+    }
+
     pane.textContent = '';
     pane.appendChild(
       renderPredictorSection(pred, actualCurve, tip, todayDone, {
@@ -810,6 +781,7 @@ async function renderPredictTab(
         deadlineEl,
         overallRetro,
         subjectBurndown: { courses, hist: subjCoursePassedHist, resultLog: subjResultLog, movieEvents: subjMovieEvents },
+        timeCheck,
       })
     );
 
@@ -1370,8 +1342,9 @@ function renderWeekGoal(pred: Prediction, weekDone: number, savedGoal: number | 
   ]);
 }
 
-/** 今日のデイリークエスト: 締切から逆算した推奨ペースを「今日あとN教材」に落とす。 */
-function renderDailyQuest(pred: Prediction, todayAmount: number): HTMLElement | null {
+/** 今日のデイリークエスト: 締切から逆算した推奨ペースを「今日あとN教材」に落とす。
+ *  secPerMatRemaining: 残り教材1つの平均秒（教科の重さを考慮した時間目安の表示用）。 */
+function renderDailyQuest(pred: Prediction, todayAmount: number, secPerMatRemaining: number | null = null): HTMLElement | null {
   if (pred.remaining <= 0) return null; // 消化済みは verdict 側で祝う
   const target = questTargetOf(pred);
   const done = Math.max(0, todayAmount);
@@ -1384,20 +1357,22 @@ function renderDailyQuest(pred: Prediction, todayAmount: number): HTMLElement | 
   fill.style.width = `${pct}%`;
   bar.appendChild(fill);
 
+  // 「N教材」の重さは教科で3倍以上違う → 残りプールの平均で時間目安を添える（公平性の回復）
+  const leftMin = !met && secPerMatRemaining ? Math.round((left * secPerMatRemaining) / 60) : null;
   return h('div', { class: 'zss-quest' + (met ? ' met' : '') }, [
     h('div', { class: 'zss-quest-top' }, [
       h('span', { class: 'zss-quest-label' }, ['今日の目標']),
       h('span', { class: 'zss-quest-count' }, [
         h('b', {}, [String(done)]),
         ` / ${target} 教材`,
-        h('span', { class: 'zss-quest-left' }, [met ? '　達成' : `　あと ${left}`]),
+        h('span', { class: 'zss-quest-left' }, [met ? '　達成' : `　あと ${left}${leftMin ? `（≈${leftMin}分）` : ''}`]),
       ]),
     ]),
     bar,
     h('div', { class: 'zss-quest-note' }, [
       met
         ? '今日のノルマは達成。この調子でコツコツ進めましょう。'
-        : `締切（${md(pred.finalDeadline)}）から逆算した推奨ペースです。`,
+        : `締切（${md(pred.finalDeadline)}）から逆算した推奨ペースです。${leftMin ? '時間目安は残り教材の平均の重さから。' : ''}`,
     ]),
   ]);
 }
@@ -1415,6 +1390,8 @@ function renderPredictorSection(
     deadlineEl?: HTMLElement | null;
     overallRetro?: { date: string; remaining: number }[];
     subjectBurndown?: { courses: CourseMaterial[]; hist: CoursePassedHistory; resultLog: ResultEntry[]; movieEvents: MovieEvent[] } | null;
+    /** 時間ベースの検算（教科別の教材の重さで換算した残り時間・直近の学習時間ペース） */
+    timeCheck?: { remainSec: number; recentSecPerDay: number | null } | null;
   }
 ): HTMLElement {
   // 見出しの判定（モンテカルロの確率・パーセンタイルを主に）
@@ -1690,7 +1667,32 @@ function renderPredictorSection(
   ]);
 
   const analysisEl = renderAnalysis(pred);
-  const quest = renderDailyQuest(pred, todayAmount);
+  // 時間ベースの検算: 教材数ベースの予測は「残りの教科構成が過去より重い/軽い」と偏る
+  // （軽い英語だけ消化してきた人は楽観に出る等）。時間換算はその影響を受けない独立チェック。
+  let timeCheckEl: HTMLElement | null = null;
+  const tc = opts.timeCheck;
+  if (tc && tc.remainSec > 0 && pred.remaining > 0) {
+    const rows: HTMLElement[] = [];
+    const hrs = Math.round(tc.remainSec / 3600);
+    const reqMin = pred.daysLeft > 0 ? Math.ceil(tc.remainSec / pred.daysLeft / 60) : Infinity;
+    rows.push(
+      analysisLine('note', `時間ベースの検算: 残り ≈ ${hrs}時間（教科別の教材の重さで換算）${isFinite(reqMin) ? ` → 締切までは 1日 約${reqMin}分` : ''}`)
+    );
+    if (tc.recentSecPerDay && tc.recentSecPerDay > 60) {
+      const etaDays = Math.ceil(tc.remainSec / tc.recentSecPerDay);
+      const eta = new Date(zenToday().getTime() + etaDays * 86400000);
+      const ok = eta.getTime() <= pred.finalDeadline.getTime();
+      rows.push(
+        analysisLine(
+          ok ? 'good' : 'warn',
+          `直近の学習時間 平均 ${durationStr(Math.round(tc.recentSecPerDay))}/日 なら ${md(eta)} ごろ完了（時間ベース${ok ? 'でも間に合う見込み' : 'では締切超過の恐れ'}）`
+        )
+      );
+    }
+    timeCheckEl = h('div', { class: 'zss-analysis' }, rows);
+  }
+  const secPerMatRem = tc && pred.remaining > 0 ? tc.remainSec / pred.remaining : null;
+  const quest = renderDailyQuest(pred, todayAmount, secPerMatRem);
   // 実績・完了見込みグラフ（今日の目標の直下に配置）
   const chartBlock = [
     h('div', { class: 'zss-section-head' }, [
@@ -1718,6 +1720,7 @@ function renderPredictorSection(
     ]),
     nums,
     ...(analysisEl ? [analysisEl] : []),
+    ...(timeCheckEl ? [timeCheckEl] : []),
     targetBox,
     paceBox,
     ...(opts.calNote ? [h('div', { class: 'zss-pred-caveat' }, [opts.calNote])] : []),

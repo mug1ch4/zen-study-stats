@@ -1,6 +1,6 @@
 {
   "name": "zen-study-stats",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "private": true,
   "description": "ZEN Study の自分の学習データを見やすく可視化する個人用ブラウザ拡張（表示専用・read-only / GETのみ）",
   "type": "module",
