@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>プライバシーポリシー — 学習統計 for ZEN Study</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", sans-serif; max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; line-height: 1.8; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 2em; }
+  code { background: rgba(127,127,127,.15); padding: 1px 5px; border-radius: 4px; }
+  .note { opacity: .75; font-size: .9em; }
+</style>
+</head>
+<body>
+<h1>プライバシーポリシー</h1>
+<p>「学習統計 for ZEN Study」（以下「本拡張機能」）のプライバシーポリシーです。<br>
+最終更新: 2026-07-20</p>
+
+<h2>要約</h2>
+<p><b>本拡張機能は、いかなるデータも外部に送信しません。</b>すべての処理と保存はあなたのブラウザ内で完結します。</p>
+
+<h2>収集・保存するデータ</h2>
+<ul>
+  <li>ZEN Study（www.nnn.ed.nico / api.nnn.ed.nico）から、<b>ログイン中のあなた自身の学習データ</b>（学習数・教材の進捗・レポート提出状況・テスト受験結果など）を <b>GET リクエストのみ</b>で取得し、表示・集計に利用します。</li>
+  <li>集計した履歴（日別の学習数・教材消化・学習時間の計測値など）は、ブラウザの拡張機能ストレージ（<code>chrome.storage.local</code>）に<b>端末内のみ</b>保存されます。</li>
+</ul>
+
+<h2>外部送信・第三者提供</h2>
+<ul>
+  <li>開発者や第三者のサーバーへのデータ送信は<b>一切ありません</b>。アクセス解析・トラッキング・広告も含みません。</li>
+  <li>通信先は ZEN Study の公式ドメイン（あなたが通常の利用で通信する先）のみで、閲覧に必要な GET リクエストに限られます。学習記録を変更する通信（POST/PUT/PATCH/DELETE）は行いません。</li>
+</ul>
+
+<h2>データのエクスポートと削除</h2>
+<ul>
+  <li>バックアップ（JSON/CSV）の書き出しは、あなたが操作したときにローカルファイルとして保存されるだけです。</li>
+  <li>蓄積データは、拡張機能をアンインストールすると削除されます。</li>
+</ul>
+
+<h2>位置づけ</h2>
+<p class="note">本拡張機能は非公式の個人プロジェクトであり、KADOKAWA・ドワンゴ・ZEN Study 運営とは関係ありません。
+ZEN Study 運営はサードパーティ製ツールの個別の検証・許諾を行っておらず、利用は各サービスの利用規約の範囲内での自己責任となります。</p>
+
+<h2>お問い合わせ</h2>
+<p><a href="https://github.com/mug1ch4/zen-study-stats/issues">GitHub の Issue</a> までお願いします。</p>
+</body>
+</html>
