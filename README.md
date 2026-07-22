@@ -7,8 +7,9 @@
 > **非公式ツールです。** KADOKAWA・ドワンゴ・N高等学校／S高等学校／R高等学校・ZEN Study 各社/各校とは
 > 一切関係のない、いち生徒による個人プロジェクトです。自分のアカウントで自分の学習データを
 > **read-only で取得して見やすく表示するだけ**のもので、学習記録の変更や動画進捗の操作は一切行いません。
-> 利用は自己責任で、各サービスの利用規約の範囲内でご使用ください。Chrome ウェブストアには公開しておらず、
-> 下記「[導入](#導入chrome-へ読み込み)」の手順（リリースzip または ソースビルド）で読み込みます。
+> 利用は自己責任で、各サービスの利用規約の範囲内でご使用ください。
+> [Chrome ウェブストア](https://chromewebstore.google.com/detail/bkmampnickklonnmenhclffblfeojndd)から
+> インストールできます（リリースzip / ソースビルドでも可・下記「[導入](#導入)」参照）。
 >
 > **運営の位置づけ（2026-07 問い合わせ確認）**: ZEN Study 運営はサードパーティ製ツールの個別の検証・許諾を
 > 行っておらず、「利用規約の範囲内で自己責任」での利用となります。拡張機能を入れた状態で生じた不具合は
@@ -25,18 +26,25 @@
 > デモはスクリーンショットではなく、`npm run build`（`scripts/build-demo.mjs`）で `docs/index.html` に
 > 自己完結HTMLとして生成され、GitHub Pages(`/docs`)で配信。**常に最新のコードを反映**します。
 
-## 導入（Chrome へ読み込み）
-**A. リリースzipから（ビルド不要・おすすめ）**
+## 導入
+
+**A. Chrome ウェブストアから（おすすめ・自動更新）**
+
+**▶ [Chrome ウェブストアでインストール](https://chromewebstore.google.com/detail/bkmampnickklonnmenhclffblfeojndd)**
+
+**B. リリースzipから（デベロッパーモード）**
 1. [Releases](https://github.com/mug1ch4/zen-study-stats/releases) から `zen-study-stats-<version>.zip` を入手して展開
 2. `chrome://extensions` →「デベロッパーモード」ON
 3. 「パッケージ化されていない拡張機能を読み込む」→ 展開したフォルダを選択
 
-**B. ソースからビルド**
+**C. ソースからビルド**
 1. `npm install && npm run build`
 2. `chrome://extensions` →「デベロッパーモード」ON
 3. 「パッケージ化されていない拡張機能を読み込む」→ このフォルダを選択
 
 いずれも、ZEN Study にログインして各ページを開く（`/setting`・コース・章など）と有効になります。
+B/C からストア版へ移行する場合、蓄積データは引き継がれません（拡張IDが変わるため）。
+移行前に「データのバックアップ / 復元」で **JSONで書き出し → ストア版で復元** してください。
 
 ## 第一原則（厳守）
 1. **GET のみ。状態変更(POST/PUT/PATCH/DELETE)は一切しない（完全 read-only）**
