@@ -3,6 +3,7 @@
 import { fetchCourseRemaining, fetchChapterRemaining, getRequiredCourseIds, type RemainingWork } from './courseApi';
 import { durationStr } from './format';
 import { h } from './dom';
+import { logWarn } from './log';
 
 const HOST_ID = 'zss-summary-host';
 // key → 集計結果。null = 取得失敗（★二度と再取得しない＝リクエストストーム防止）。
@@ -223,7 +224,7 @@ export async function ensureCourseSummary(): Promise<void> {
     else host.remove();
   } catch (e) {
     // ★負のキャッシュ: このキーは失敗として記録し、以後この画面では二度と再取得しない。
-    console.warn('[ZSS] コース残り集計失敗（この画面では再取得しません）:', e);
+    logWarn('コース残り集計失敗（この画面では再取得しません）:', e);
     cache.set(info.key, null);
     document.getElementById(HOST_ID)?.remove();
   } finally {
@@ -262,7 +263,7 @@ async function doRefresh(): Promise<void> {
     if (box) fillBanner(box, rem, info.kind); // 既存バナーを点滅なしで差し替え
     else void ensureCourseSummary(); // バナー未設置なら通常設置（初回など）
   } catch (e) {
-    console.warn('[ZSS] 残り再集計失敗（この画面では次の完了検知まで据え置き）:', e);
+    logWarn('残り再集計失敗（この画面では次の完了検知まで据え置き）:', e);
   } finally {
     refreshInflight = false;
   }

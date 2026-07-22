@@ -1,6 +1,7 @@
 // API 共通の GET ラッパー（api.ts / courseApi.ts で共用）。
 // 【第一原則】GET のみ。状態変更(POST/PUT/PATCH/DELETE)は絶対に呼ばない。
 // このファイルには GET 以外のメソッドを書かないこと。
+import { logError } from './log';
 
 export const API_BASE = 'https://api.nnn.ed.nico';
 
@@ -23,7 +24,7 @@ function rateGuard(): void {
   if (times.length >= MAX_IN_WINDOW) {
     trippedUntil = now + TRIP_MS;
     times = [];
-    console.error('[ZSS] リクエスト過多を検知しました。API呼び出しを60秒間遮断します（暴走防止）。');
+    logError('リクエスト過多を検知しました。API呼び出しを60秒間遮断します（暴走防止）。');
     throw new RateLimitError('rate-limited (tripped)');
   }
   times.push(now);

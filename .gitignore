@@ -4,5 +4,8 @@ dist/
 .DS_Store
 Thumbs.db
 
+# IDE
+.qoder/
+
 # release artifacts
 *.zip

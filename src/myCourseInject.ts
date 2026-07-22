@@ -4,6 +4,7 @@
 //   React 再描画で消えても再注入は上限まで＝リクエストストームを構造的に防ぐ。
 import { fetchMonthlyReport } from './api';
 import { h } from './dom';
+import { logWarn } from './log';
 
 const MARK = 'zss-mc-undone';
 const MOUNT_CAP = 6;
@@ -56,7 +57,7 @@ function renderUndone(list: Undone[]): HTMLElement {
     box.append(strong, meta);
   });
   if (list.length > MAX) {
-    const more = h('span', {}, [`　ほか ${list.length - MAX}件`]);
+    const more = h('span', {}, [` +${list.length - MAX}件`]);
     (more as HTMLElement).style.color = c.sub;
     box.appendChild(more);
   }
@@ -113,7 +114,7 @@ export function ensureMyCourseUndone(): void {
         if (li2 && isMyCoursePath()) inject(li2, key, data);
       })
       .catch((e) => {
-        console.warn('[ZSS] 月別レポート取得失敗（再取得しません）:', e);
+        logWarn('月別レポート取得失敗（再取得しません）:', e);
         cache.set(key, null); // 負のキャッシュ
       })
       .finally(() => inflight.delete(key));

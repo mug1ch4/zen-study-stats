@@ -5,6 +5,7 @@ import { CSS } from '../styles';
 import { renderLearningCard } from './learningCard';
 import { isDark } from '../darkmode';
 import { h } from '../dom';
+import { logWarn } from '../log';
 
 const HOST_ID = 'zss-side-host';
 let openState = false;
@@ -107,7 +108,7 @@ async function loadCard(root: ShadowRoot): Promise<void> {
     body.textContent = '';
     body.appendChild(renderLearningCard(data));
   } catch (e) {
-    console.warn('[ZSS] サイドパネルの取得失敗:', e);
+    logWarn('サイドパネルの取得失敗:', e);
     body.textContent = '';
     body.appendChild(h('div', { class: 'zss-side-loading' }, ['学習データを取得できませんでした。']));
   }

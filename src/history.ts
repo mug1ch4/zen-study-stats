@@ -5,6 +5,7 @@
 // 14日窓をマージ蓄積する。14日以内に一度でも開けば穴は空かない。
 import type { DailyAmount } from './api';
 import { zenTodayISO, zenWeekStartISO } from './format';
+import { logWarn } from './log';
 
 const KEY_HISTORY = 'zss:history'; // { "YYYY-MM-DD": number } 学習数
 const KEY_REPORTHIST = 'zss:reportHist'; // { "YYYY-MM-DD": number } 完了レポート累計
@@ -488,7 +489,7 @@ export async function maybeDailySnapshot(work: () => Promise<void>): Promise<voi
     await work();
     await chrome.storage.local.set({ [KEY_LASTSNAP]: today });
   } catch (e) {
-    console.warn('[ZSS] 日次スナップショット失敗:', e);
+    logWarn('日次スナップショット失敗:', e);
   }
 }
 

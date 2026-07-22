@@ -6,6 +6,7 @@ import { collectResultLog, getResultLog, getResultLogAt } from '../resultLog';
 import { retroSections } from '../resultStats';
 import { fetchCourseMaterials } from '../courseApi';
 import type { Section } from '../analysis';
+import { logWarn } from '../log';
 
 function hasStorage(): boolean {
   return typeof chrome !== 'undefined' && !!chrome?.storage?.local;
@@ -65,7 +66,7 @@ export function renderResultLogFold(renderSection: (s: Section) => HTMLElement):
         await renderStats();
       })
       .catch((e) => {
-        console.warn('[ZSS] 詳細ログ抽出失敗:', e);
+        logWarn('詳細ログ抽出失敗:', e);
         status.className = 'zss-dm-status err';
         status.textContent = '抽出に失敗しました。時間をおいて再試行してください。';
       })

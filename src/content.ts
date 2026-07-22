@@ -13,6 +13,7 @@ import { notifyRolloverSoon, notifyProgress, notifyWeekReview } from './notify';
 import { zenWeekStartISO, parseDate, weekdayLabel } from './format';
 import { showToast } from './ui/toast';
 import { startStudyTimeTracking, startFrameActivityBeacon } from './studyTime';
+import { initLogger, logWarn } from './log';
 
 // 【DEV】完了検知の動作確認用トースト。切り分け（observer発火/確定判定）を可視化する。
 // ※リリース前に false に戻す（通常ユーザーには不要）。
@@ -37,7 +38,7 @@ async function ensureApplied(): Promise<void> {
     try {
       cache = await fetchLearningAmounts();
     } catch (e) {
-      console.warn('[ZSS] 学習数の取得に失敗:', e);
+      logWarn('学習数の取得に失敗:', e);
       return;
     } finally {
       fetching = false;
@@ -295,6 +296,7 @@ function onRouteChange(): void {
 
 function startup(): void {
   started = true;
+  initLogger(); // デバッグフラグの読み込み（chrome.storage）
   void initDarkMode(); // サイト全体ダークモード（全ページ）
   try {
     void chrome.storage?.local.remove(['zss:courseVol3', 'zss:courseVol4', 'zss:courseVol5']); // 旧集計キャッシュの残留掃除

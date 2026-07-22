@@ -4,6 +4,7 @@
 // アンインストール/PC移行での喪失を防ぐ手段を提供する。
 import { h } from '../dom';
 import { isoLocal } from '../format';
+import { logWarn } from '../log';
 
 const PREFIX = 'zss:';
 // バックアップ対象外（再構築可能なキャッシュ／端末ごとの運用・セッション状態）。
@@ -147,7 +148,7 @@ export function renderDataManage(): HTMLElement {
       triggerDownload(`zen-study-stats-backup-${isoLocal(new Date())}.json`, 'application/json', JSON.stringify(backup, null, 2));
       setStatus(`書き出しました（学習記録 ${n} 日ぶん）`, 'ok');
     } catch (e) {
-      console.warn('[ZSS] エクスポート失敗:', e);
+      logWarn('エクスポート失敗:', e);
       setStatus('書き出しに失敗しました', 'err');
     }
   });
@@ -159,7 +160,7 @@ export function renderDataManage(): HTMLElement {
       triggerDownload(`zen-study-stats-${isoLocal(new Date())}.csv`, 'text/csv', toCsv(data));
       setStatus('CSVを書き出しました', 'ok');
     } catch (e) {
-      console.warn('[ZSS] CSV書き出し失敗:', e);
+      logWarn('CSV書き出し失敗:', e);
       setStatus('CSVの書き出しに失敗しました', 'err');
     }
   });
@@ -179,7 +180,7 @@ export function renderDataManage(): HTMLElement {
       setStatus(`復元しました（${n} 日ぶんを統合）。反映するには再読み込みしてください。`, 'ok');
       (reloadBtn as HTMLElement).style.display = '';
     } catch (e) {
-      console.warn('[ZSS] インポート失敗:', e);
+      logWarn('インポート失敗:', e);
       setStatus(e instanceof Error ? e.message : '復元に失敗しました', 'err');
     } finally {
       fileInput.value = '';

@@ -13,6 +13,7 @@ import { evaluateCalibration } from '../calibration';
 import { reportDeadlineStatus, type DeadlineStatus } from '../deadlines';
 import { computeCourseDeadlineRisks, type CourseDeadlineRisk } from '../deadlineRisk';
 import { computeCoursePaces, overallForecast } from '../coursePace';
+import { logWarn } from '../log';
 import { fetchMonthlyReport } from '../api';
 import { zenWeekStartISO } from '../format';
 import { weekdayTendency, monthlyTendency, holidayTendency, consistencyTendency, timeOfDayTendency, requiredAdvice, trendTendency, distributionSummary, workTimeTendency, journeySummary, deadlineTendency, coursePaceTendency, type Section } from '../analysis';
@@ -784,7 +785,7 @@ async function renderPredictTab(
         }));
         deadlineRisks = computeCourseDeadlineRisks(groups, computeCoursePaces(coursePassedHist));
       } catch (e) {
-        console.warn('[ZSS] 締切リスク判定をスキップ:', e);
+        logWarn('締切リスク判定をスキップ:', e);
       }
     }
     const deadlineEl = renderNextDeadline(dstatus, deadlineRisks);
@@ -857,7 +858,7 @@ async function renderPredictTab(
     void notifyProgress(passed, total);
     void notifyQuest(todayDone, questTargetOf(pred));
   } catch (e) {
-    console.warn('[ZSS] 完了予測の取得失敗:', e);
+    logWarn('完了予測の取得失敗:', e);
     pane.textContent = '';
     pane.appendChild(h('div', { class: 'zss-empty' }, ['予測を取得できませんでした。']));
   }
@@ -913,7 +914,7 @@ async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<Co
           rerender(incSupp);
         })
         .catch((e) => {
-          console.warn('[ZSS] 教材ボリューム集計失敗:', e);
+          logWarn('教材ボリューム集計失敗:', e);
           volBtn.disabled = false;
           volBtn.textContent = '集計する（再試行）';
         });
@@ -924,7 +925,7 @@ async function renderSubjectsTab(pane: HTMLElement, getCourses: () => Promise<Co
     pane.appendChild(tierA);
     pane.appendChild(volBody);
   } catch (e) {
-    console.warn('[ZSS] 教科データ取得失敗:', e);
+    logWarn('教科データ取得失敗:', e);
     pane.textContent = '';
     pane.appendChild(h('div', { class: 'zss-empty' }, ['教科データを取得できませんでした。']));
   }
@@ -1033,7 +1034,7 @@ async function renderAnalysisTab(
     const achDates = await getAchievementDates();
     pane.appendChild(renderAchievements(unlocked0, achDates));
   } catch (e) {
-    console.warn('[ZSS] 分析の取得失敗:', e);
+    logWarn('分析の取得失敗:', e);
     pane.textContent = '';
     pane.appendChild(h('div', { class: 'zss-empty' }, ['分析データを取得できませんでした。']));
   }
@@ -1230,7 +1231,7 @@ async function renderElectivePredictTab(pane: HTMLElement, getCourses: () => Pro
       h('div', { class: 'zss-pred-note' }, ['必修以外の詳しい内訳は「教科」タブ（必修以外）で確認できます。理解度＝教材（動画・ガイド・授業）の閲覧進捗、習熟度テスト＝修了判定。学習数・傾向は「推移」タブに全体で表示されます。']),
     );
   } catch (e) {
-    console.warn('[ZSS] 必修以外予測の取得失敗:', e);
+    logWarn('必修以外予測の取得失敗:', e);
     pane.textContent = '';
     pane.appendChild(h('div', { class: 'zss-empty' }, ['必修以外のデータを取得できませんでした。']));
   }
@@ -1267,7 +1268,7 @@ async function renderElectiveAnalysisTab(pane: HTMLElement, getCourses: () => Pr
     pane.appendChild(h('div', { class: 'zss-analysis-head' }, ['必修以外の学習傾向']));
     pane.appendChild(renderInsightSection(sec));
   } catch (e) {
-    console.warn('[ZSS] 必修以外分析の取得失敗:', e);
+    logWarn('必修以外分析の取得失敗:', e);
     pane.textContent = '';
     pane.appendChild(h('div', { class: 'zss-empty' }, ['必修以外のデータを取得できませんでした。']));
   }

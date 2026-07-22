@@ -6,6 +6,7 @@ import { getDayStart } from './history';
 import { computeKpis } from './derive';
 import { zenToday, zenTodayISO } from './format';
 import { h, s } from './dom';
+import { logWarn } from './log';
 
 const app = document.getElementById('app')!;
 
@@ -104,7 +105,7 @@ async function main(): Promise<void> {
       h('div', { class: 'p-note' }, ['表示専用・read-only。データ取得はこのポップアップを開いた時のみ。'])
     );
   } catch (e) {
-    console.warn('[ZSS] popup 取得失敗:', e);
+    logWarn('popup 取得失敗:', e);
     const openBtn = h('button', { class: 'p-open' }, ['ZEN Study を開く']);
     openBtn.addEventListener('click', openZen);
     app.textContent = '';
